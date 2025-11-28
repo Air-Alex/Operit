@@ -79,11 +79,22 @@ object WorkspaceAttachmentProcessor {
     private fun getWorkspaceSuggestions(workspaceDir: File): String {
         val suggestions = mutableListOf<String>()
         try {
-            // 提醒AI分离文件
-            suggestions.add("请将HTML, CSS, 和 JavaScript 代码分别存放到独立的文件中。")
+            // 通用建议：先了解项目再修改
+            suggestions.add("对于用户意图，建议先使用 grep_context（基于意图搜索相关文件）和 grep_code（搜索特定代码模式）工具去了解项目当前情况，再进行修改。")
             
-            // 建议创建子目录来组织文件（常驻建议）
-            suggestions.add("如果项目较为复杂，可以考虑新建js文件夹和css文件夹并创建多个文件。")
+            // 检查工作区中是否有HTML文件
+            val hasHtmlFiles = workspaceDir.walkTopDown()
+                .filter { it.isFile }
+                .any { it.extension.lowercase() == "html" || it.extension.lowercase() == "htm" }
+            
+            // 只有在有HTML文件时才显示H5相关建议
+            if (hasHtmlFiles) {
+                // 提醒AI分离文件
+                suggestions.add("请将HTML, CSS, 和 JavaScript 代码分别存放到独立的文件中。")
+                
+                // 建议创建子目录来组织文件（常驻建议）
+                suggestions.add("如果项目较为复杂，可以考虑新建js文件夹和css文件夹并创建多个文件。")
+            }
 
             return if (suggestions.isNotEmpty()) {
                 suggestions.joinToString("\n")
@@ -109,8 +120,9 @@ object WorkspaceAttachmentProcessor {
         val fullStructure = buildStructureStringFromMetadata(newFileMetadatas, workspacePath)
 
         if (oldFileMetadatas == null) {
-            // 首次加载，只显示完整结构
-            return "首次加载工作区:\n$fullStructure"
+            // 首次加载，只显示根目录
+            val rootLevelStructure = buildRootLevelStructure(workspacePath)
+            return "首次加载工作区:\n$rootLevelStructure"
         }
 
         // --- 计算差异 ---
@@ -184,6 +196,44 @@ object WorkspaceAttachmentProcessor {
                 )
             }
             .toList()
+    }
+
+    /**
+     * 构建根目录级别的结构（仅显示根目录下的直接子项）
+     */
+    private fun buildRootLevelStructure(workspacePath: String): String {
+        val workspaceDir = File(workspacePath)
+        if (!workspaceDir.exists() || !workspaceDir.isDirectory) {
+            return "工作区不存在或不是目录"
+        }
+        
+        // 加载 gitignore 规则
+        val ignoreRules = GitIgnoreFilter.loadRules(workspaceDir)
+        
+        // 只获取根目录下的直接子项
+        val rootItems = workspaceDir.listFiles()
+            ?.filter { !GitIgnoreFilter.shouldIgnore(it, workspaceDir, ignoreRules) }
+            ?.sortedWith(compareBy({ !it.isDirectory }, { it.name }))
+            ?: emptyList()
+        
+        if (rootItems.isEmpty()) {
+            return "工作区为空"
+        }
+        
+        val builder = StringBuilder()
+        rootItems.forEachIndexed { index, file ->
+            val isLast = index == rootItems.size - 1
+            val prefix = if (isLast) "└── " else "├── "
+            val icon = if (file.isDirectory) "📁" else "📄"
+            
+            builder.append("$prefix$icon ${file.name}")
+            if (file.isFile && file.length() > 0) {
+                builder.append(" (${formatFileSize(file.length())})")
+            }
+            builder.append("\n")
+        }
+        
+        return builder.toString()
     }
 
     /**
@@ -351,23 +401,19 @@ object WorkspaceAttachmentProcessor {
             // 加载 gitignore 规则
             val ignoreRules = GitIgnoreFilter.loadRules(workspaceDir)
             
-            workspaceDir.walkTopDown()
-                .onEnter { dir -> 
-                    // 使用 gitignore 规则判断是否进入目录
-                    !GitIgnoreFilter.shouldIgnore(dir, workspaceDir, ignoreRules)
-                }
-                .filter { it.isFile }
-                .filter { file ->
+            // 只监听根目录下的文件，与 buildSimpleStructure 保持一致
+            workspaceDir.listFiles()
+                ?.filter { it.isFile } // 只处理文件
+                ?.filter { file ->
                     // 过滤应该被忽略的文件
                     !GitIgnoreFilter.shouldIgnore(file, workspaceDir, ignoreRules)
                 }
-                .filter { it.lastModified() > oneDayAgo }
-                .sortedByDescending { it.lastModified() }
-                .take(10) // 最多显示10个文件
-                .forEach { file ->
-                    val relativePath = file.relativeTo(workspaceDir).path
+                ?.filter { it.lastModified() > oneDayAgo }
+                ?.sortedByDescending { it.lastModified() }
+                ?.take(10) // 最多显示10个文件
+                ?.forEach { file ->
                     val timeAgo = formatTimeAgo(currentTime - file.lastModified())
-                    recentFiles.add("$relativePath ($timeAgo)")
+                    recentFiles.add("${file.name} ($timeAgo)")
                 }
         } catch (e: Exception) {
             Log.e(TAG, "获取最近修改文件失败", e)

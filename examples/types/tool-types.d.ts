@@ -14,8 +14,9 @@ import {
     CalculationResultData, FFmpegResultData, ADBResultData, IntentResultData, TerminalCommandResultData,
     FilePartContentData, FileApplyResultData, WorkflowListResultData, WorkflowResultData, WorkflowDetailResultData,
     StringResultData, ChatServiceStartResultData, ChatCreationResultData, ChatListResultData,
-    ChatSwitchResultData, MessageSendResultData, MemoryLinkResultData
+    ChatSwitchResultData, MessageSendResultData, MemoryLinkResultData, GrepResultData
 } from './results';
+
 /**
  * Maps tool names to their result data types
  */
@@ -32,6 +33,8 @@ export interface ToolResultMap {
     'copy_file': FileOperationData;
     'make_directory': FileOperationData;
     'find_files': FindFilesResultData;
+    'grep_code': GrepResultData;
+    'grep_context': GrepResultData;
     'file_info': FileInfoData;
     'zip_files': FileOperationData;
     'unzip_files': FileOperationData;

@@ -4,10 +4,12 @@ import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ai.assistance.operit.core.tools.AIToolHandler
@@ -69,6 +72,9 @@ fun FileBrowser(
     var newFileName by remember { mutableStateOf("") }
     // 用于控制长按上下文菜单的状态
     var contextMenuExpandedFor by remember { mutableStateOf<DirectoryEntry?>(null) }
+    // 排序方式：0=名称, 1=大小, 2=修改时间
+    var sortMode by remember { mutableStateOf(0) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
     fun loadDirectory(path: String) {
         if (isLoading) return // 防止并发加载
@@ -232,13 +238,59 @@ fun FileBrowser(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
             ) {
+                // 头部省略的路径显示（使用水平滚动，自动滚动到末尾）
+                val scrollState = rememberScrollState()
+                var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+                
+                LaunchedEffect(currentPath, textLayoutResult) {
+                    textLayoutResult?.let {
+                        // 滚动到末尾，显示路径的最后部分
+                        scrollState.scrollTo(scrollState.maxValue)
+                    }
+                }
+                
                 Text(
                         text = currentPath,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+                        overflow = TextOverflow.Clip,
+                        onTextLayout = { textLayoutResult = it },
+                        modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(scrollState)
                 )
+
+                // 排序按钮
+                Box {
+                    IconButton(
+                            onClick = { showSortMenu = true },
+                            modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                                Icons.Default.Sort,
+                                contentDescription = "排序",
+                                modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    
+                    DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                                text = { Text("按名称${if (sortMode == 0) " ✓" else ""}") },
+                                onClick = { sortMode = 0; showSortMenu = false }
+                        )
+                        DropdownMenuItem(
+                                text = { Text("按大小${if (sortMode == 1) " ✓" else ""}") },
+                                onClick = { sortMode = 1; showSortMenu = false }
+                        )
+                        DropdownMenuItem(
+                                text = { Text("按修改时间${if (sortMode == 2) " ✓" else ""}") },
+                                onClick = { sortMode = 2; showSortMenu = false }
+                        )
+                    }
+                }
 
                 if (isManageMode) {
                     IconButton(
@@ -291,8 +343,7 @@ fun FileBrowser(
                         }
                     }
 
-                    items(fileList.sortedWith(compareBy({ !it.isDirectory }, { it.name }))) { item
-                        ->
+                    items(getSortedFileList(fileList, sortMode)) { item ->
                         Box { // 使用Box来定位上下文菜单
                             FileListItem(
                                     name = item.name,
@@ -450,3 +501,31 @@ fun getFileIcon(fileName: String) =
             fileName.endsWith(".md", true) -> Icons.Default.Article
             else -> Icons.Default.InsertDriveFile
         }
+
+/**
+ * 根据排序模式对文件列表进行排序
+ * @param fileList 原始文件列表
+ * @param sortMode 0=按名称, 1=按大小, 2=按修改时间
+ */
+private fun getSortedFileList(fileList: List<DirectoryEntry>, sortMode: Int): List<DirectoryEntry> {
+    return when (sortMode) {
+        0 -> fileList.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        1 -> fileList.sortedWith(compareBy({ !it.isDirectory }, { -it.size }))
+        2 -> fileList.sortedWith(compareBy({ !it.isDirectory }, { -parseLastModified(it.lastModified) }))
+        else -> fileList.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+    }
+}
+
+/**
+ * 解析修改时间字符串为毫秒时间戳
+ */
+@SuppressLint("SimpleDateFormat")
+private fun parseLastModified(dateString: String): Long {
+    return try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", Locale.getDefault())
+        inputFormat.timeZone = TimeZone.getTimeZone("UTC")
+        inputFormat.parse(dateString)?.time ?: 0L
+    } catch (e: Exception) {
+        0L
+    }
+}

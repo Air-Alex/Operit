@@ -95,7 +95,7 @@ File System Tools:
 
 - list_files: List files in a directory. Parameters: path (e.g. "/sdcard/Download")
 $readFileDescription
-- read_file_part: Read the content of a file by parts (200 lines per part). Parameters: path (file path), partIndex (part number, starts from 0)
+- read_file_part: Read file content by line range. Parameters: path (file path), start_line (starting line number, 1-indexed, default 1), end_line (ending line number, 1-indexed, inclusive, optional, default start_line + 99)
 - apply_file: Applies edits to a file by finding and replacing content blocks, or directly overwrites the entire file.
   - **How it works**: This tool has two modes:
     1. **Edit Mode**: Locates code based on the content inside the `[OLD]` block (not by line numbers) and replaces it with the content from the `[NEW]` block.
@@ -129,6 +129,7 @@ $readFileDescription
 - make_directory: Create a directory. Parameters: path (directory path), create_parents (boolean, default false)
 - find_files: Search for files matching a pattern. Parameters: path (search path, for Android use /sdcard/..., for Linux use /home/... or /etc/...), pattern (search pattern, e.g. "*.jpg"), max_depth (optional, controls depth of subdirectory search, -1=unlimited), use_path_pattern (boolean, default false), case_insensitive (boolean, default false)
 - grep_code: Search code content matching a regex pattern in files. Returns matches with surrounding context lines. Parameters: path (search path), pattern (regex pattern), file_pattern (file filter, default "*"), case_insensitive (boolean, default false), context_lines (lines of context before/after match, default 3), max_results (max matches, default 100)
+- grep_context: Search for relevant content based on intent/context understanding. Supports two modes: 1) Directory mode: when path is a directory, finds most relevant files. 2) File mode: when path is a file, finds most relevant code segments within that file. Uses semantic relevance scoring. Parameters: path (directory or file path), intent (intent or context description string), file_pattern (file filter for directory mode, default "*"), max_results (maximum items to return, default 10)
 - file_info: Get detailed information about a file or directory including type, size, permissions, owner, group, and last modified time. Parameters: path (target path)
 - zip_files: Compress files or directories. Parameters: source (path to compress), destination (output zip file)
 - unzip_files: Extract a zip file. Parameters: source (zip file path), destination (extract path)
@@ -176,7 +177,7 @@ Note: The memory library and user personality profile are automatically updated 
 
 - list_files: 列出目录中的文件。参数：path（例如"/sdcard/Download"）
 $readFileDescription
-- read_file_part: 分部分读取文件内容（每部分200行）。参数：path（文件路径），partIndex（部分编号，从0开始）
+- read_file_part: 按行号范围读取文件内容。参数：path（文件路径），start_line（起始行号，从1开始，默认1），end_line（结束行号，从1开始，包括该行，可选，默认为start_line + 99）
 - apply_file: 通过查找并替换内容块来编辑文件，或直接覆盖整个文件。
   - **工作原理**: 此工具有两种模式：
     1. **编辑模式**: 根据 `[OLD]` 块中的内容（而不是行号）来定位代码，然后用 `[NEW]` 块中的内容替换它。
@@ -210,6 +211,7 @@ $readFileDescription
 - make_directory: 创建目录。参数：path（目录路径），create_parents（布尔值，默认false）
 - find_files: 搜索匹配模式的文件。参数：path（搜索路径，Android用/sdcard/...，Linux用/home/...或/etc/...），pattern（搜索模式，例如"*.jpg"），max_depth（可选，控制子目录搜索深度，-1=无限），use_path_pattern（布尔值，默认false），case_insensitive（布尔值，默认false）
 - grep_code: 在文件中搜索匹配正则表达式的代码内容，返回带上下文的匹配结果。参数：path（搜索路径），pattern（正则表达式模式），file_pattern（文件过滤，默认"*"），case_insensitive（布尔值，默认false），context_lines（匹配行前后的上下文行数，默认3），max_results（最大匹配数，默认100）
+- grep_context: 基于意图/上下文理解搜索相关内容。支持两种模式：1) 目录模式：当path是目录时，找出最相关的文件。2) 文件模式：当path是文件时，找出该文件内最相关的代码段。使用语义相关性评分。参数：path（目录或文件路径），intent（意图或上下文描述字符串），file_pattern（目录模式下的文件过滤，默认"*"），max_results（返回的最大项数，默认10）
 - file_info: 获取文件或目录的详细信息，包括类型、大小、权限、所有者、组和最后修改时间。参数：path（目标路径）
 - zip_files: 压缩文件或目录。参数：source（要压缩的路径），destination（输出zip文件）
 - unzip_files: 解压zip文件。参数：source（zip文件路径），destination（解压路径）

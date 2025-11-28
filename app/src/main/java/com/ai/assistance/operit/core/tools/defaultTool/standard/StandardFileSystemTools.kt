@@ -46,6 +46,7 @@ import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.terminal.TerminalManager
 import com.ai.assistance.operit.terminal.provider.filesystem.FileSystemProvider
 import com.ai.assistance.operit.core.tools.defaultTool.PathValidator
+import com.ai.assistance.operit.services.OnnxEmbeddingService
 
 /**
  * Collection of file system operation tools for the AI assistant These tools use Java File APIs for
@@ -490,6 +491,7 @@ open class StandardFileSystemTools(protected val context: Context) {
     open suspend fun readFileFull(tool: AITool): ToolResult {
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
         val environment = tool.parameters.find { it.name == "environment" }?.value
+        val textOnly = tool.parameters.find { it.name == "text_only" }?.value?.toBoolean() ?: false
 
         // 如果是Linux环境，委托给LinuxFileSystemTools
         if (isLinuxEnvironment(environment)) {
@@ -528,6 +530,19 @@ open class StandardFileSystemTools(protected val context: Context) {
             }
 
             val fileExt = file.extension.lowercase()
+            
+            // 如果启用了 text_only 模式，检查文件是否为文本
+            if (textOnly) {
+                // 读取文件前 512 字节进行判断
+                if (!FileUtils.isTextLike(file, 512)) {
+                    return ToolResult(
+                        toolName = tool.name,
+                        success = false,
+                        result = StringResultData(""),
+                        error = "Skipped non-text file: $path"
+                    )
+                }
+            }
 
             // 尝试特殊文件处理
             if (isSpecialFileType(fileExt)) {
@@ -682,12 +697,12 @@ open class StandardFileSystemTools(protected val context: Context) {
         }
     }
 
-    /** 分段读取文件内容，每次读取指定部分（默认每部分从配置中获取） */
+    /** 按行号范围读取文件内容（行号从1开始，包括开始行和结束行） */
     open suspend fun readFilePart(tool: AITool): ToolResult {
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
         val environment = tool.parameters.find { it.name == "environment" }?.value
-        val partIndex =
-            tool.parameters.find { it.name == "partIndex" }?.value?.toIntOrNull() ?: 0
+        val startLineParam = tool.parameters.find { it.name == "start_line" }?.value?.toIntOrNull() ?: 1
+        val endLineParam = tool.parameters.find { it.name == "end_line" }?.value?.toIntOrNull()
 
         // 如果是Linux环境，委托给LinuxFileSystemTools
         if (isLinuxEnvironment(environment)) {
@@ -705,7 +720,6 @@ open class StandardFileSystemTools(protected val context: Context) {
         }
 
         return try {
-            val partSize = apiPreferences.getPartSize()
             val file = File(path)
             if (!file.exists() || !file.isFile) {
                 return ToolResult(
@@ -739,25 +753,27 @@ open class StandardFileSystemTools(protected val context: Context) {
                 totalLines = countFileLines(file)
             }
 
-            // 2. 统一计算分页参数 (消除重复逻辑)
-            val totalParts = (totalLines + partSize - 1) / partSize
-            val validPartIndex = partIndex.coerceIn(0, if (totalParts > 0) totalParts - 1 else 0)
-            val startLine = validPartIndex * partSize
-            val endLine = minOf(startLine + partSize, totalLines)
+            // 2. 计算实际的行号范围（行号从1开始，转换为0-based索引）
+            val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
+            val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
+            
+            // 转换为0-based索引
+            val startIndex = startLine - 1
+            val endIndex = endLine // endLine 本身就是最后一行的1-based行号，转成exclusive的end需要不减1
 
             // 3. 获取分段内容
             val partContent = if (inMemoryLines != null) {
                 // 内存模式：直接切片
-                if (totalLines > 0 && startLine < totalLines) {
-                    inMemoryLines.subList(startLine, endLine).joinToString("\n")
+                if (totalLines > 0 && startIndex < totalLines) {
+                    inMemoryLines.subList(startIndex, minOf(endIndex, totalLines)).joinToString("\n")
                 } else ""
             } else {
                 // 磁盘流模式：读取指定行
-                if (totalLines > 0) readLinesFromFile(file, startLine, endLine) else ""
+                if (totalLines > 0) readLinesFromFile(file, startIndex, endIndex) else ""
             }
 
             // 4. 封装返回结果
-            val contentWithLineNumbers = addLineNumbers(partContent, startLine, totalLines)
+            val contentWithLineNumbers = addLineNumbers(partContent, startIndex, totalLines)
 
             ToolResult(
                 toolName = tool.name,
@@ -765,10 +781,10 @@ open class StandardFileSystemTools(protected val context: Context) {
                 result = FilePartContentData(
                     path = path,
                     content = contentWithLineNumbers,
-                    partIndex = validPartIndex,
-                    totalParts = totalParts,
-                    startLine = startLine,
-                    endLine = endLine,
+                    partIndex = 0, // 保留兼容性，但不再使用
+                    totalParts = 1, // 保留兼容性，但不再使用
+                    startLine = startIndex,
+                    endLine = minOf(endIndex, totalLines),
                     totalLines = totalLines
                 ),
                 error = ""
@@ -3143,6 +3159,7 @@ open class StandardFileSystemTools(protected val context: Context) {
      * 依赖 findFiles 和 readFileFull 函数，不直接使用 File 类
      */
     open suspend fun grepCode(tool: AITool): ToolResult {
+        val startTime = System.currentTimeMillis()
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
         val environment = tool.parameters.find { it.name == "environment" }?.value
         val pattern = tool.parameters.find { it.name == "pattern" }?.value ?: ""
@@ -3153,6 +3170,8 @@ open class StandardFileSystemTools(protected val context: Context) {
             tool.parameters.find { it.name == "context_lines" }?.value?.toIntOrNull() ?: 3
         val maxResults =
             tool.parameters.find { it.name == "max_results" }?.value?.toIntOrNull() ?: 100
+
+        Log.d(TAG, "grep_code: Starting search - path=$path, pattern=\"$pattern\", file_pattern=$filePattern, max_results=$maxResults")
 
         // 如果是Linux环境，委托给LinuxFileSystemTools
         if (isLinuxEnvironment(environment)) {
@@ -3203,8 +3222,10 @@ open class StandardFileSystemTools(protected val context: Context) {
             }
 
             val foundFiles = (findFilesResult.result as FindFilesResultData).files
+            Log.d(TAG, "grep_code: Found ${foundFiles.size} files to search")
 
             if (foundFiles.isEmpty()) {
+                Log.d(TAG, "grep_code: No files found matching pattern")
                 return ToolResult(
                     toolName = tool.name,
                     success = true,
@@ -3233,56 +3254,86 @@ open class StandardFileSystemTools(protected val context: Context) {
 
             for (filePath in foundFiles) {
                 if (totalMatches >= maxResults) {
+                    Log.d(TAG, "grep_code: Reached max results limit ($maxResults), stopping search")
                     break
                 }
 
                 filesSearched++
+                val fileStartTime = System.currentTimeMillis()
 
-                // 读取文件内容
+                // 读取文件内容（启用 text_only 模式，跳过图片等非文本文件）
                 val readResult = readFileFull(
                     AITool(
                         name = "read_file_full",
-                        parameters = listOf(ToolParameter("path", filePath))
+                        parameters = listOf(
+                            ToolParameter("path", filePath),
+                            ToolParameter("text_only", "true")
+                        )
                     )
                 )
 
                 if (!readResult.success) {
                     // 如果读取失败（可能是二进制文件或权限问题），跳过该文件
+                    Log.d(TAG, "grep_code: Skipped file $filePath (${readResult.error})")
                     continue
                 }
 
                 val fileContent = (readResult.result as FileContentData).content
                 val lines = fileContent.lines()
-                val lineMatches = mutableListOf<GrepResultData.LineMatch>()
-
-                // 搜索每一行
-                lines.forEachIndexed { index, line ->
-                    if (regex.containsMatchIn(line)) {
-                        val lineNumber = index + 1
-
-                        // 获取上下文（前后几行）
-                        val context = if (contextLines > 0) {
-                            val startIdx = maxOf(0, index - contextLines)
-                            val endIdx = minOf(lines.size - 1, index + contextLines)
-                            lines.subList(startIdx, endIdx + 1).joinToString("\n")
-                        } else {
-                            null
-                        }
-
-                        lineMatches.add(
-                            GrepResultData.LineMatch(
-                                lineNumber = lineNumber,
-                                lineContent = line.trim(),
-                                matchContext = context
-                            )
-                        )
-
-                        totalMatches++
-
-                        if (totalMatches >= maxResults) {
-                            return@forEachIndexed
-                        }
+                
+                // 使用 regex.findAll 在整个文件内容上一次性找到所有匹配，比逐行遍历更高效
+                val matches = regex.findAll(fileContent)
+                val matchedLineNumbers = matches
+                    .map { match ->
+                        // 通过计算匹配位置之前的换行符数量得到行号
+                        fileContent.substring(0, match.range.first).count { it == '\n' }
                     }
+                    .distinct()
+                    .sorted()
+                    .toList()
+
+                if (matchedLineNumbers.isEmpty()) {
+                    continue
+                }
+                
+                val fileElapsed = System.currentTimeMillis() - fileStartTime
+                Log.d(TAG, "grep_code: File $filesSearched/${foundFiles.size} - Found ${matchedLineNumbers.size} matching lines in ${File(filePath).name} (${fileElapsed}ms)")
+
+                // 合并相近的匹配（根据上下文窗口大小）
+                val mergedMatches = mergeNearbyMatches(matchedLineNumbers, contextLines)
+                
+                val lineMatches = mutableListOf<GrepResultData.LineMatch>()
+                
+                // 为每个合并后的匹配组创建一个 LineMatch
+                for (matchGroup in mergedMatches) {
+                    if (totalMatches >= maxResults) {
+                        break
+                    }
+                    
+                    val firstLine = matchGroup.first()
+                    val lastLine = matchGroup.last()
+                    
+                    // 获取合并后的上下文
+                    val startIdx = maxOf(0, firstLine - contextLines)
+                    val endIdx = minOf(lines.size - 1, lastLine + contextLines)
+                    val context = lines.subList(startIdx, endIdx + 1).joinToString("\n")
+                    
+                    // 收集这个区间内所有匹配的行内容
+                    val matchedLinesContent = matchGroup.map { lines[it].trim() }.joinToString(" | ")
+                    
+                    lineMatches.add(
+                        GrepResultData.LineMatch(
+                            lineNumber = firstLine + 1, // 第一个匹配的行号
+                            lineContent = if (matchGroup.size == 1) {
+                                lines[firstLine].trim()
+                            } else {
+                                "${matchGroup.size} matches: ${matchedLinesContent.take(200)}..." // 限制长度
+                            },
+                            matchContext = context
+                        )
+                    )
+                    
+                    totalMatches++
                 }
 
                 // 如果该文件有匹配，添加到结果中
@@ -3297,6 +3348,9 @@ open class StandardFileSystemTools(protected val context: Context) {
             }
 
             // 4. 返回结果
+            val totalElapsed = System.currentTimeMillis() - startTime
+            Log.d(TAG, "grep_code: Completed - Found $totalMatches matches in ${fileMatches.size} files (searched $filesSearched/${foundFiles.size} files, ${totalElapsed}ms total)")
+            
             ToolResult(
                 toolName = tool.name,
                 success = true,
@@ -3311,7 +3365,8 @@ open class StandardFileSystemTools(protected val context: Context) {
             )
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error performing grep search", e)
+            val totalElapsed = System.currentTimeMillis() - startTime
+            Log.e(TAG, "grep_code: Error after ${totalElapsed}ms - ${e.message}", e)
             ToolResult(
                 toolName = tool.name,
                 success = false,
@@ -3319,6 +3374,419 @@ open class StandardFileSystemTools(protected val context: Context) {
                 error = "Error performing grep search: ${e.message}"
             )
         }
+    }
+
+    /**
+     * Grep上下文搜索工具 - 基于意图字符串查找相关文件或文件内的相关代码段
+     * 使用语义相关性评分来匹配最相关的内容
+     * 
+     * 支持两种模式：
+     * 1. 目录模式：path 是目录，搜索最相关的文件
+     * 2. 文件模式：path 是文件，搜索文件内最相关的代码段
+     */
+    open suspend fun grepContext(tool: AITool): ToolResult {
+        val path = tool.parameters.find { it.name == "path" }?.value ?: ""
+        val environment = tool.parameters.find { it.name == "environment" }?.value
+        val intent = tool.parameters.find { it.name == "intent" }?.value ?: ""
+        val filePattern = tool.parameters.find { it.name == "file_pattern" }?.value ?: "*"
+        val maxResults = tool.parameters.find { it.name == "max_results" }?.value?.toIntOrNull() ?: 10
+
+        // 检查 OnnxEmbeddingService 是否初始化
+        if (!OnnxEmbeddingService.isInitialized()) {
+            try {
+                OnnxEmbeddingService.initialize(context)
+            } catch (e: Exception) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = StringResultData(""),
+                    error = "Failed to initialize embedding service: ${e.message}"
+                )
+            }
+        }
+
+        // 如果是Linux环境，委托给LinuxFileSystemTools
+        if (isLinuxEnvironment(environment)) {
+            return linuxTools.grepContext(tool)
+        }
+        PathValidator.validateAndroidPath(path, tool.name)?.let { return it }
+
+        if (path.isBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Path parameter is required"
+            )
+        }
+
+        if (intent.isBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Intent parameter is required"
+            )
+        }
+
+        return try {
+            val file = File(path)
+            
+            // 检查是文件还是目录
+            if (file.isFile) {
+                // 文件模式：搜索文件内的相关代码段
+                return grepContextInFile(path, intent, maxResults, tool.name)
+            }
+            
+            // 目录模式：搜索相关文件
+            // 1. 查找所有匹配的文件
+            val findFilesResult = findFiles(
+                AITool(
+                    name = "find_files",
+                    parameters = listOf(
+                        ToolParameter("path", path),
+                        ToolParameter("pattern", filePattern),
+                        ToolParameter("use_path_pattern", "false"),
+                        ToolParameter("case_insensitive", "false"),
+                        ToolParameter("environment", environment ?: "")
+                    )
+                )
+            )
+
+            if (!findFilesResult.success) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = StringResultData(""),
+                    error = "Failed to find files: ${findFilesResult.error}"
+                )
+            }
+
+            val foundFiles = (findFilesResult.result as FindFilesResultData).files
+
+            if (foundFiles.isEmpty()) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = true,
+                    result = GrepResultData(
+                        searchPath = path,
+                        pattern = intent,
+                        matches = emptyList(),
+                        totalMatches = 0,
+                        filesSearched = 0
+                    )
+                )
+            }
+
+            // 2. 生成意图的向量
+            val intentEmbedding = OnnxEmbeddingService.generateEmbedding(intent)
+            if (intentEmbedding == null) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = StringResultData(""),
+                    error = "Failed to generate embedding for intent"
+                )
+            }
+
+            // 3. 为每个文件计算相关性评分（基于向量相似度）
+            data class FileScore(val path: String, val score: Double)
+            val fileScores = mutableListOf<FileScore>()
+
+            // 限制最多处理的文件数，避免生成向量过慢
+            val filesToProcess = foundFiles.take(50) 
+
+            for (filePath in filesToProcess) {
+                val currentFile = File(filePath)
+                
+                // 跳过目录，只处理文件
+                if (!currentFile.isFile) {
+                    continue
+                }
+                
+                val fileName = currentFile.name
+                val fileExt = currentFile.extension.lowercase()
+                
+                // 只读取前20行（使用 readFilePart，虽然返回内容带行号但不影响向量生成）
+                val readResult = readFilePart(
+                    AITool(
+                        name = "read_file_part",
+                        parameters = listOf(
+                            ToolParameter("path", filePath),
+                            ToolParameter("start_line", "1"),
+                            ToolParameter("end_line", "20")
+                        )
+                    )
+                )
+
+                val fileContent = if (readResult.success) {
+                    (readResult.result as FilePartContentData).content
+                } else {
+                    ""
+                }
+                
+                // 组合文件名和内容作为代表性文本
+                // 给予文件名更高的权重（通过重复文件名）
+                val representativeText = "File: $fileName. $fileName. Content: ${fileContent.take(500)}"
+                
+                val fileEmbedding = OnnxEmbeddingService.generateEmbedding(representativeText)
+                if (fileEmbedding != null) {
+                    var similarity = OnnxEmbeddingService.cosineSimilarity(intentEmbedding, fileEmbedding)
+                    
+                    // 对文档类文件降低权重，避免其在代码搜索中占据优势
+                    val docExtensions = setOf("md", "txt", "doc", "docx", "pdf", "rst", "adoc")
+                    if (fileExt in docExtensions) {
+                        similarity *= 0.7f // 降低30%权重
+                    }
+                    
+                    if (similarity > 0.2) { // 设定一个最小相似度阈值
+                        fileScores.add(FileScore(filePath, similarity.toDouble()))
+                    }
+                }
+            }
+
+            // 4. 按评分排序并取top N
+            val topFiles = fileScores.sortedByDescending { it.score }.take(maxResults)
+
+            // 5. 构建返回结果（目录模式：只显示文件路径和相关度，不显示内容预览）
+            val fileMatches = topFiles.map { fileScore ->
+                GrepResultData.FileMatch(
+                    filePath = fileScore.path,
+                    lineMatches = listOf(
+                        GrepResultData.LineMatch(
+                            lineNumber = 0,
+                            lineContent = "语义相关度: ${String.format("%.4f", fileScore.score)}",
+                            matchContext = null // 不显示文件内容预览
+                        )
+                    )
+                )
+            }
+
+            ToolResult(
+                toolName = tool.name,
+                success = true,
+                result = GrepResultData(
+                    searchPath = path,
+                    pattern = intent,
+                    matches = fileMatches,
+                    totalMatches = fileMatches.size,
+                    filesSearched = foundFiles.size
+                )
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing context search", e)
+            ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Error performing context search: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * 在单个文件内搜索与意图最相关的代码段
+     */
+    protected suspend fun grepContextInFile(
+        path: String,
+        intent: String,
+        maxResults: Int,
+        toolName: String
+    ): ToolResult {
+        return try {
+            // 1. 读取文件内容
+            val readResult = readFileFull(
+                AITool(
+                    name = "read_file_full",
+                    parameters = listOf(ToolParameter("path", path))
+                )
+            )
+
+            if (!readResult.success) {
+                return ToolResult(
+                    toolName = toolName,
+                    success = false,
+                    result = StringResultData(""),
+                    error = "Failed to read file: ${readResult.error}"
+                )
+            }
+
+            val fileContent = (readResult.result as FileContentData).content
+            val lines = fileContent.lines()
+            
+            if (lines.isEmpty()) {
+                return ToolResult(
+                    toolName = toolName,
+                    success = true,
+                    result = GrepResultData(
+                        searchPath = path,
+                        pattern = intent,
+                        matches = emptyList(),
+                        totalMatches = 0,
+                        filesSearched = 1
+                    )
+                )
+            }
+
+            // 2. 生成意图向量
+            val intentEmbedding = OnnxEmbeddingService.generateEmbedding(intent)
+            if (intentEmbedding == null) {
+                return ToolResult(
+                    toolName = toolName,
+                    success = false,
+                    result = StringResultData(""),
+                    error = "Failed to generate embedding for intent"
+                )
+            }
+
+            // 3. 将文件分段（按固定行数或代码块）
+            val segments = segmentFileContent(lines)
+
+            // 4. 为每个代码段评分
+            data class SegmentScore(
+                val startLine: Int,
+                val endLine: Int,
+                val score: Double,
+                val content: String
+            )
+
+            val segmentScores = mutableListOf<SegmentScore>()
+
+            for (segment in segments) {
+                val segmentContent = lines.subList(segment.first, segment.second + 1).joinToString("\n")
+                val segmentEmbedding = OnnxEmbeddingService.generateEmbedding(segmentContent)
+                
+                if (segmentEmbedding != null) {
+                    val similarity = OnnxEmbeddingService.cosineSimilarity(intentEmbedding, segmentEmbedding)
+                    
+                    if (similarity > 0.2) {
+                        segmentScores.add(
+                            SegmentScore(
+                                startLine = segment.first,
+                                endLine = segment.second,
+                                score = similarity.toDouble(),
+                                content = segmentContent
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 5. 按评分排序并取 top N
+            val topSegments = segmentScores.sortedByDescending { it.score }.take(maxResults)
+
+            // 6. 构建返回结果
+            val fileMatches = listOf(
+                GrepResultData.FileMatch(
+                    filePath = path,
+                    lineMatches = topSegments.map { segment ->
+                        // 取前3行作为预览
+                        val previewLines = segment.content.lines().take(3)
+                        val preview = previewLines.joinToString(" | ")
+                        val hasMore = segment.content.lines().size > 3
+                        
+                        GrepResultData.LineMatch(
+                            lineNumber = segment.startLine + 1, // 1-indexed
+                            lineContent = "相关度: ${String.format("%.4f", segment.score)} | ${preview}${if (hasMore) "..." else ""}",
+                            matchContext = null // 不使用 matchContext，避免行号重复显示
+                        )
+                    }
+                )
+            )
+
+            ToolResult(
+                toolName = toolName,
+                success = true,
+                result = GrepResultData(
+                    searchPath = path,
+                    pattern = intent,
+                    matches = fileMatches,
+                    totalMatches = topSegments.size,
+                    filesSearched = 1
+                )
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing context search in file", e)
+            ToolResult(
+                toolName = toolName,
+                success = false,
+                result = StringResultData(""),
+                error = "Error performing context search in file: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * 将文件内容分段
+     * 返回段落的起始和结束行索引对 (startLine, endLine)
+     */
+    protected fun segmentFileContent(lines: List<String>): List<Pair<Int, Int>> {
+        if (lines.isEmpty()) return emptyList()
+        
+        val segments = mutableListOf<Pair<Int, Int>>()
+        val segmentSize = 30 // 每段30行
+        
+        var currentStart = 0
+        while (currentStart < lines.size) {
+            val currentEnd = minOf(currentStart + segmentSize - 1, lines.size - 1)
+            
+            // 尝试在代码块边界处分段（寻找空行或大括号）
+            var adjustedEnd = currentEnd
+            if (currentEnd < lines.size - 1) {
+                // 向后查找最多5行，寻找更好的分段点
+                for (i in currentEnd until minOf(currentEnd + 5, lines.size)) {
+                    val line = lines[i].trim()
+                    if (line.isEmpty() || line == "}" || line == "})" || line.endsWith("{")) {
+                        adjustedEnd = i
+                        break
+                    }
+                }
+            }
+            
+            segments.add(Pair(currentStart, adjustedEnd))
+            currentStart = adjustedEnd + 1
+        }
+        
+        return segments
+    }
+
+    /**
+     * 合并相近的匹配行
+     * 如果两个匹配行之间的距离小于等于 2 * contextLines，则合并它们
+     * @param matchedLines 所有匹配的行号列表（已排序）
+     * @param contextLines 上下文行数
+     * @return 合并后的匹配组列表
+     */
+    private fun mergeNearbyMatches(matchedLines: List<Int>, contextLines: Int): List<List<Int>> {
+        if (matchedLines.isEmpty()) return emptyList()
+        
+        val sorted = matchedLines.sorted()
+        val merged = mutableListOf<MutableList<Int>>()
+        var currentGroup = mutableListOf(sorted[0])
+        
+        for (i in 1 until sorted.size) {
+            val prev = sorted[i - 1]
+            val curr = sorted[i]
+            
+            // 如果两个匹配的上下文窗口会重叠或相邻，则合并
+            // 窗口重叠条件：curr - prev <= 2 * contextLines + 1
+            if (curr - prev <= 2 * contextLines + 1) {
+                currentGroup.add(curr)
+            } else {
+                // 开始新的组
+                merged.add(currentGroup)
+                currentGroup = mutableListOf(curr)
+            }
+        }
+        
+        // 添加最后一组
+        if (currentGroup.isNotEmpty()) {
+            merged.add(currentGroup)
+        }
+        
+        return merged
     }
 
     /**

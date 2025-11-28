@@ -1047,7 +1047,7 @@
     <string name="multi_select">多选</string>
     <string name="exit_multi_select">退出多选</string>
     <string name="select_all_messages">全选</string>
-    <string name="clear_selection">取消全选</string>
+    <string name="clear_selection">取消</string>
     <string name="delete_selected">删除选中</string>
     <string name="share_selected">分享</string>
     <string name="selected_count">已选择 %d 条</string>
@@ -3324,7 +3324,7 @@
     <string name="unbound_chats_select_card">共有 %1$d 条聊天记录未绑定角色卡。请选择要归类到的目标角色卡：</string>
     <string name="no_cards_create_first">暂无可用角色卡，请先创建一个角色卡。</string>
     <string name="assign_action">归类</string>
-    <string name="select_all_current_list">全选当前列表</string>
+    <string name="select_all_current_list">全选</string>
     <string name="target_character_card_optional">目标角色卡（可选）</string>
     <string name="select_card_or_unbind">请选择一个角色卡或取消绑定</string>
     <string name="remove_character_card_binding">移除角色卡绑定</string>
@@ -3386,4 +3386,27 @@
     <string name="keep_screen_on">屏幕常亮</string>
     <string name="keep_screen_on_description">保持屏幕常亮，防止在对话时自动锁屏</string>
     <string name="reset_all_display_settings">重置所有显示设置</string>
+    
+    <!-- Chat History Management -->
+    <string name="default_profile_name">默认配置</string>
+    <string name="removed_character_card_binding">已移除 %1$d 条对话的角色卡绑定</string>
+    <string name="assigned_chats_to_character_card">已将 %1$d 条对话归类到「%2$s」</string>
+    <string name="assigned_chats_to_group">已将 %1$d 条对话分组到「%2$s」</string>
+    <string name="deleted_unbound_workspaces">已删除 %1$d 个无绑定工作区</string>
+    <string name="delete_failed">删除失败: %1$s</string>
+    <string name="character_card_statistics">角色卡统计</string>
+    <string name="character_card_statistics_subtitle">查看每个角色卡下的对话与消息数量</string>
+    <string name="character_fallback">角</string>
+    <string name="selected_chats_count">已选择 %1$d / %2$d 条</string>
+    <string name="apply_changes">应用更改</string>
+    <string name="apply_group">应用分组</string>
+    <string name="apply_character_card">应用角色卡</string>
+    <string name="unbound_workspaces_title">无绑定工作区</string>
+    <string name="unbound_workspaces_subtitle">管理未被任何对话使用的工作区文件夹</string>
+    <string name="no_unbound_workspaces">暂无无绑定的工作区文件夹</string>
+    <string name="selected_workspaces_count">已选择 %1$d / %2$d 个</string>
+    <string name="clear_all">清空</string>
+    <string name="delete_selected_workspaces">删除选中的工作区 (%1$d)</string>
+    <string name="delete_workspaces_confirmation">确定要删除选中的 %1$d 个工作区吗？\n\n删除后将无法恢复所有文件和数据。</string>
+    <string name="not_used_by_any_chat">未被任何对话使用</string>
 </resources>

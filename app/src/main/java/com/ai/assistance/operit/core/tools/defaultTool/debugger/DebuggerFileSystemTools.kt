@@ -354,6 +354,7 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
             return super.readFileFull(tool)
         }
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
+        val textOnly = tool.parameters.find { it.name == "text_only" }?.value?.toBoolean() ?: false
         PathValidator.validateAndroidPath(path, tool.name)?.let { return it }
 
         if (path.isBlank()) {
@@ -394,27 +395,29 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
                  // Optional: Could add fallback logic here if superclass fails for some reason
             }
 
-            // Check if file is text-like by reading first few bytes
-            // First, get a sample of the file
-            val sampleResult = AndroidShellExecutor.executeShellCommand("head -c 512 '$path'")
-            if (!sampleResult.success) {
-                return ToolResult(
-                    toolName = tool.name,
-                    success = false,
-                    result = StringResultData(""),
-                    error = "Failed to sample file: ${sampleResult.stderr}"
-                )
-            }
+            // Check if file is text-like by reading first few bytes (if text_only is enabled)
+            if (textOnly) {
+                // First, get a sample of the file
+                val sampleResult = AndroidShellExecutor.executeShellCommand("head -c 512 '$path'")
+                if (!sampleResult.success) {
+                    return ToolResult(
+                        toolName = tool.name,
+                        success = false,
+                        result = StringResultData(""),
+                        error = "Failed to sample file: ${sampleResult.stderr}"
+                    )
+                }
 
-            // Analyze the sample bytes
-            val sampleBytes = sampleResult.stdout.toByteArray()
-            if (!FileUtils.isTextLike(sampleBytes)) {
-                return ToolResult(
-                    toolName = tool.name,
-                    success = false,
-                    result = StringResultData(""),
-                    error = "File does not appear to be a text file. Use specialized tools for binary files."
-                )
+                // Analyze the sample bytes
+                val sampleBytes = sampleResult.stdout.toByteArray()
+                if (!FileUtils.isTextLike(sampleBytes)) {
+                    return ToolResult(
+                        toolName = tool.name,
+                        success = false,
+                        result = StringResultData(""),
+                        error = "Skipped non-text file: $path"
+                    )
+                }
             }
 
             // For text-like files, use shell `cat` to read full content
@@ -563,7 +566,7 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
         }
     }
 
-    /** 分段读取文件内容 */
+    /** 按行号范围读取文件内容（行号从1开始，包括开始行和结束行） */
     override suspend fun readFilePart(tool: AITool): ToolResult {
         val environment = tool.parameters.find { it.name == "environment" }?.value
         if (environment == "linux") {
@@ -571,8 +574,8 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
         }
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
         PathValidator.validateAndroidPath(path, tool.name)?.let { return it }
-        val partIndex = tool.parameters.find { it.name == "partIndex" }?.value?.toIntOrNull() ?: 0
-        val partSize = apiPreferences.getPartSize()
+        val startLineParam = tool.parameters.find { it.name == "start_line" }?.value?.toIntOrNull() ?: 1
+        val endLineParam = tool.parameters.find { it.name == "end_line" }?.value?.toIntOrNull()
 
         if (path.isBlank()) {
             return ToolResult(
@@ -619,12 +622,9 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
 
             val totalLines = wcResult.stdout.trim().split(" ")[0].toIntOrNull() ?: 0
 
-            // 3. Calculate part info
-            val totalParts = (totalLines + partSize - 1) / partSize
-            val validPartIndex = partIndex.coerceIn(0, if (totalParts > 0) totalParts - 1 else 0)
-
-            val startLine = validPartIndex * partSize + 1 // sed is 1-indexed
-            val endLine = minOf(startLine + partSize - 1, totalLines)
+            // 3. 计算实际的行号范围（行号从1开始）
+            val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
+            val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
 
             if (totalLines == 0 || startLine > endLine) {
                 return ToolResult(
@@ -634,9 +634,9 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
                                 FilePartContentData(
                                         path = path,
                                         content = "",
-                                        partIndex = validPartIndex,
-                                        totalParts = totalParts,
-                                        startLine = startLine - 1,
+                                        partIndex = 0, // 保留兼容性，但不再使用
+                                        totalParts = 1, // 保留兼容性，但不再使用
+                                        startLine = startLine - 1, // 转为0-based
                                         endLine = endLine,
                                         totalLines = totalLines
                                 ),
@@ -667,8 +667,8 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
                             FilePartContentData(
                                     path = path,
                                     content = contentWithLineNumbers.trimEnd(),
-                                    partIndex = validPartIndex,
-                                    totalParts = totalParts,
+                                    partIndex = 0, // 保留兼容性，但不再使用
+                                    totalParts = 1, // 保留兼容性，但不再使用
                                     startLine = startLine - 1, // To 0-indexed for response
                                     endLine = endLine,
                                     totalLines = totalLines

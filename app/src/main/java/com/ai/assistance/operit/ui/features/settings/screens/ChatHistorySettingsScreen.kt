@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import android.widget.Toast
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -93,6 +94,41 @@ fun ChatHistorySettingsScreen() {
             totalChatCount = histories.size
         }
     }
+    
+    // 获取无绑定的工作区文件夹
+    var unboundWorkspaces by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(chatHistories) {
+        scope.launch {
+            try {
+                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val workspaceBaseDir = File(downloadDir, "Operit/workspace")
+                
+                if (workspaceBaseDir.exists() && workspaceBaseDir.isDirectory) {
+                    // 获取所有工作区文件夹
+                    val allWorkspaceDirs = workspaceBaseDir.listFiles { file ->
+                        file.isDirectory
+                    }?.map { it.name } ?: emptyList()
+                    
+                    // 获取已绑定的工作区（从workspace字段提取chatId）
+                    val boundWorkspaces = chatHistories
+                        .mapNotNull { it.workspace }
+                        .mapNotNull { path ->
+                            // 从路径中提取chatId: /sdcard/Download/Operit/workspace/{chatId}
+                            File(path).name
+                        }
+                        .toSet()
+                    
+                    // 找出无绑定的工作区
+                    unboundWorkspaces = allWorkspaceDirs.filter { it !in boundWorkspaces }
+                } else {
+                    unboundWorkspaces = emptyList()
+                }
+            } catch (e: Exception) {
+                Log.e("ChatHistorySettings", "获取无绑定工作区失败", e)
+                unboundWorkspaces = emptyList()
+            }
+        }
+    }
 
     val profileIds by userPreferencesManager.profileListFlow.collectAsState(initial = listOf("default"))
     var allProfiles by remember { mutableStateOf<List<PreferenceProfile>>(emptyList()) }
@@ -109,7 +145,7 @@ fun ChatHistorySettingsScreen() {
     }
     
     val activeProfileName =
-        allProfiles.find { it.id == activeProfileId }?.name ?: "默认配置"
+        allProfiles.find { it.id == activeProfileId }?.name ?: context.getString(R.string.default_profile_name)
 
     var showAssignCharacterDialog by remember { mutableStateOf(false) }
     var pendingAssignStat by remember { mutableStateOf<CharacterCardChatStats?>(null) }
@@ -171,9 +207,9 @@ fun ChatHistorySettingsScreen() {
                                 )
                                 messageParts.add(
                                     if (targetCharacterName.isNullOrBlank()) {
-                                        "已移除 ${selectedIds.size} 条对话的角色卡绑定"
+                                        context.getString(R.string.removed_character_card_binding, selectedIds.size)
                                     } else {
-                                        "已将 ${selectedIds.size} 条对话归类到「$targetCharacterName」"
+                                        context.getString(R.string.assigned_chats_to_character_card, selectedIds.size, targetCharacterName)
                                     }
                                 )
                             }
@@ -184,7 +220,7 @@ fun ChatHistorySettingsScreen() {
                                     chatIds = selectedIds,
                                     groupName = targetGroupName
                                 )
-                                messageParts.add("已将 ${selectedIds.size} 条对话分组到「$targetGroupName」")
+                                messageParts.add(context.getString(R.string.assigned_chats_to_group, selectedIds.size, targetGroupName))
                             }
                             
                             val message = messageParts.joinToString("；")
@@ -197,6 +233,39 @@ fun ChatHistorySettingsScreen() {
                                 Toast.LENGTH_LONG
                             ).show()
                             false
+                        }
+                    }
+                )
+            }
+            
+            // 无绑定工作区管理卡片
+            item {
+                UnboundWorkspaceCard(
+                    unboundWorkspaces = unboundWorkspaces,
+                    onDelete = { selectedWorkspaces ->
+                        scope.launch {
+                            try {
+                                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                val workspaceBaseDir = File(downloadDir, "Operit/workspace")
+                                
+                                var deletedCount = 0
+                                selectedWorkspaces.forEach { workspaceName ->
+                                    val workspaceDir = File(workspaceBaseDir, workspaceName)
+                                    if (workspaceDir.exists() && workspaceDir.isDirectory) {
+                                        if (workspaceDir.deleteRecursively()) {
+                                            deletedCount++
+                                        }
+                                    }
+                                }
+                                
+                                Toast.makeText(context, context.getString(R.string.deleted_unbound_workspaces, deletedCount), Toast.LENGTH_SHORT).show()
+                                
+                                // 刷新列表
+                                unboundWorkspaces = unboundWorkspaces.filter { it !in selectedWorkspaces }
+                            } catch (e: Exception) {
+                                Log.e("ChatHistorySettings", "删除工作区失败", e)
+                                Toast.makeText(context, context.getString(R.string.delete_failed, e.localizedMessage ?: ""), Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 )
@@ -376,8 +445,8 @@ private fun CharacterCardStatsCard(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SectionHeader(
-                title = "角色卡统计",
-                subtitle = "查看每个角色卡下的对话与消息数量",
+                title = context.getString(R.string.character_card_statistics),
+                subtitle = context.getString(R.string.character_card_statistics_subtitle),
                 icon = Icons.Default.AssignmentInd
             )
 
@@ -488,13 +557,13 @@ private fun CharacterCardStatRow(
                 if (!avatarUri.isNullOrBlank()) {
                     Image(
                         painter = rememberAsyncImagePainter(model = Uri.parse(avatarUri)),
-                        contentDescription = "角色卡头像",
+                        contentDescription = context.getString(R.string.character_card_avatar),
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                 } else {
             Text(
-                        text = characterCard.name.firstOrNull()?.toString() ?: "角",
+                        text = characterCard.name.firstOrNull()?.toString() ?: context.getString(R.string.character_fallback),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -650,11 +719,18 @@ private fun ChatHistoryBatchSelectorCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "已选择 ${selectedChatIds.size} / ${filteredHistories.size} 条",
+                        text = context.getString(R.string.selected_chats_count, selectedChatIds.size, filteredHistories.size),
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.wrapContentWidth()
+                    ) {
                         TextButton(
                             onClick = {
                                 val ids = filteredHistories.map { it.id }
@@ -803,10 +879,10 @@ private fun ChatHistoryBatchSelectorCard(
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         val buttonText = when {
-                            targetIsUnbind && targetGroupName.isNotBlank() -> "应用更改"
-                            targetIsUnbind -> "移除绑定"
-                            targetGroupName.isNotBlank() && selectedTargetName.isNullOrBlank() -> "应用分组"
-                            else -> "应用角色卡"
+                            targetIsUnbind && targetGroupName.isNotBlank() -> context.getString(R.string.apply_changes)
+                            targetIsUnbind -> context.getString(R.string.remove_character_card_binding)
+                            targetGroupName.isNotBlank() && selectedTargetName.isNullOrBlank() -> context.getString(R.string.apply_group)
+                            else -> context.getString(R.string.apply_character_card)
                         }
                         Text(buttonText)
                     }
@@ -909,4 +985,180 @@ private fun SectionHeader(
             }
         }
     }
+
+/**
+ * 无绑定工作区管理卡片
+ */
+@Composable
+private fun UnboundWorkspaceCard(
+    unboundWorkspaces: List<String>,
+    onDelete: (Set<String>) -> Unit
+) {
+    val context = LocalContext.current
+    var selectedWorkspaces by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SectionHeader(
+                title = context.getString(R.string.unbound_workspaces_title),
+                subtitle = context.getString(R.string.unbound_workspaces_subtitle),
+                icon = Icons.Default.FolderOff
+            )
+            
+            if (unboundWorkspaces.isEmpty()) {
+                Text(
+                    text = context.getString(R.string.no_unbound_workspaces),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                // 选择控制栏
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = context.getString(R.string.selected_workspaces_count, selectedWorkspaces.size, unboundWorkspaces.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { selectedWorkspaces = unboundWorkspaces.toSet() },
+                            enabled = unboundWorkspaces.isNotEmpty()
+                        ) {
+                            Text(context.getString(R.string.select_all_current_list))
+                        }
+                        TextButton(
+                            onClick = { selectedWorkspaces = emptySet() },
+                            enabled = selectedWorkspaces.isNotEmpty()
+                        ) {
+                            Text(context.getString(R.string.clear_all))
+                        }
+                    }
+                }
+                
+                // 工作区列表
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    itemsIndexed(unboundWorkspaces, key = { _, workspace -> workspace }) { index, workspace ->
+                        UnboundWorkspaceRow(
+                            workspaceName = workspace,
+                            selected = selectedWorkspaces.contains(workspace),
+                            onSelectionChange = { selected ->
+                                selectedWorkspaces = if (selected) {
+                                    selectedWorkspaces + workspace
+                                } else {
+                                    selectedWorkspaces - workspace
+                                }
+                            }
+                        )
+                        if (index < unboundWorkspaces.lastIndex) {
+                            Divider(color = MaterialTheme.colorScheme.surface, thickness = 1.dp)
+                        }
+                    }
+                }
+                
+                // 删除按钮
+                Button(
+                    onClick = { showDeleteConfirmDialog = true },
+                    enabled = selectedWorkspaces.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(context.getString(R.string.delete_selected_workspaces, selectedWorkspaces.size))
+                }
+            }
+        }
+    }
+    
+    // 删除确认对话框
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text(context.getString(R.string.confirm_delete)) },
+            text = { 
+                Text(context.getString(R.string.delete_workspaces_confirmation, selectedWorkspaces.size)) 
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(selectedWorkspaces)
+                        selectedWorkspaces = emptySet()
+                        showDeleteConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(context.getString(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text(context.getString(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 无绑定工作区行项目
+ */
+@Composable
+private fun UnboundWorkspaceRow(
+    workspaceName: String,
+    selected: Boolean,
+    onSelectionChange: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectionChange(!selected) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onSelectionChange(it) }
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = workspaceName,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = context.getString(R.string.not_used_by_any_chat),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
 

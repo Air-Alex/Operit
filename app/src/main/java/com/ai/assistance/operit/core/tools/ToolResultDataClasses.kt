@@ -1059,9 +1059,25 @@ data class GrepResultData(
         if (matches.isEmpty()) {
             sb.appendLine("未找到匹配项")
         } else {
-            matches.forEach { fileMatch ->
+            // 设置显示上限 - 最多显示30个匹配组
+            val maxDisplayMatches = 30
+            var displayedMatches = 0
+            var collapsedMatches = 0
+            
+            for (fileMatch in matches) {
+                val remainingSlots = maxDisplayMatches - displayedMatches
+                if (remainingSlots <= 0) {
+                    // 统计剩余被折叠的匹配数
+                    collapsedMatches += fileMatch.lineMatches.size
+                    continue
+                }
+                
                 sb.appendLine("文件: ${fileMatch.filePath}")
-                fileMatch.lineMatches.forEach { lineMatch ->
+                
+                val matchesToShow = fileMatch.lineMatches.take(remainingSlots)
+                val matchesCollapsedInFile = fileMatch.lineMatches.size - matchesToShow.size
+                
+                matchesToShow.forEach { lineMatch ->
                     // 如果有上下文，显示完整的上下文
                     if (lineMatch.matchContext != null && lineMatch.matchContext.isNotBlank()) {
                         val contextLines = lineMatch.matchContext.lines()
@@ -1085,12 +1101,21 @@ data class GrepResultData(
                         val lineNumStr = String.format("%6d", lineMatch.lineNumber)
                         sb.appendLine("$lineNumStr| ${lineMatch.lineContent}")
                     }
+                    displayedMatches++
                 }
+                
+                if (matchesCollapsedInFile > 0) {
+                    sb.appendLine("  ... (此文件中还有 $matchesCollapsedInFile 个匹配组被折叠)")
+                    collapsedMatches += matchesCollapsedInFile
+                }
+                
                 sb.appendLine()
             }
             
-            if (matches.size > 20) {
-                sb.appendLine("... 结果过多，仅显示前20个文件的匹配")
+            if (collapsedMatches > 0) {
+                sb.appendLine("=" .repeat(60))
+                sb.appendLine("为节省空间，共有 $collapsedMatches 个匹配组被折叠")
+                sb.appendLine("显示了 $displayedMatches 个匹配组，总共 $totalMatches 个匹配")
             }
         }
         

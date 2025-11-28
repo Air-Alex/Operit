@@ -17,6 +17,13 @@ fun getJsToolsDefinition(): String {
                     if (environment) params.environment = environment;
                     return toolCall("read_file_full", params);
                 },
+                readPart: (path, startLine, endLine, environment) => {
+                    const params = { path };
+                    if (startLine !== undefined) params.start_line = String(startLine);
+                    if (endLine !== undefined) params.end_line = String(endLine);
+                    if (environment) params.environment = environment;
+                    return toolCall("read_file_part", params);
+                },
                 write: (path, content, append, environment) => {
                     const params = { path, content };
                     if (append !== undefined) params.append = append ? "true" : "false";
@@ -66,6 +73,11 @@ fun getJsToolsDefinition(): String {
                     const params = { path, pattern, ...options };
                     // environment can be included in options
                     return toolCall("grep_code", params);
+                },
+                grepContext: (path, intent, options = {}) => {
+                    const params = { path, intent, ...options };
+                    // environment and file_pattern can be included in options
+                    return toolCall("grep_context", params);
                 },
                 info: (path, environment) => {
                     const params = { path };

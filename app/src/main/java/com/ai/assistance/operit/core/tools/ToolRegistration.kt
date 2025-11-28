@@ -498,15 +498,17 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
             executor = { tool -> kotlinx.coroutines.runBlocking { fileSystemTools.readFile(tool) } }
     )
 
-    // 分段读取文件内容
+    // 按行号范围读取文件内容
     handler.registerTool(
             name = "read_file_part",
             descriptionGenerator = { tool ->
                 val path = tool.parameters.find { it.name == "path" }?.value ?: ""
                 val environment = tool.parameters.find { it.name == "environment" }?.value
-                val partIndex = tool.parameters.find { it.name == "partIndex" }?.value ?: "0"
+                val startLine = tool.parameters.find { it.name == "start_line" }?.value ?: "1"
+                val endLine = tool.parameters.find { it.name == "end_line" }?.value
                 val envInfo = if (!environment.isNullOrBlank() && environment != "android") " (环境: $environment)" else ""
-                "分段读取文件 (部分 $partIndex): $path$envInfo"
+                val rangeInfo = if (endLine != null) "行 $startLine-$endLine" else "从行 $startLine 开始"
+                "读取文件 ($rangeInfo): $path$envInfo"
             },
             executor = { tool ->
                 kotlinx.coroutines.runBlocking { fileSystemTools.readFilePart(tool) }
@@ -879,6 +881,22 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
             },
             executor = { tool ->
                 kotlinx.coroutines.runBlocking { fileSystemTools.grepCode(tool) }
+            }
+    )
+
+    // Grep上下文搜索
+    handler.registerTool(
+            name = "grep_context",
+            descriptionGenerator = { tool ->
+                val path = tool.parameters.find { it.name == "path" }?.value ?: ""
+                val intent = tool.parameters.find { it.name == "intent" }?.value ?: ""
+                val environment = tool.parameters.find { it.name == "environment" }?.value
+                val envInfo = if (!environment.isNullOrBlank() && environment != "android") " (环境: $environment)" else ""
+                val preview = if (intent.length > 40) "${intent.take(40)}..." else intent
+                "在 $path 中基于意图搜索相关文件: '$preview'$envInfo"
+            },
+            executor = { tool ->
+                kotlinx.coroutines.runBlocking { fileSystemTools.grepContext(tool) }
             }
     )
 

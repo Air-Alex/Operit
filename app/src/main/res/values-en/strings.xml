@@ -301,7 +301,7 @@
     <string name="multi_select">Multi-select</string>
     <string name="exit_multi_select">Exit Multi-select</string>
     <string name="select_all_messages">Select all</string>
-    <string name="clear_selection">Clear selection</string>
+    <string name="clear_selection">Cancel</string>
     <string name="delete_selected">Delete Selected</string>
     <string name="share_selected">Share</string>
     <string name="selected_count">%d selected</string>
@@ -3329,7 +3329,7 @@
     <string name="unbound_chats_select_card">There are %1$d chat records not bound to a character card. Please select the target character card:</string>
     <string name="no_cards_create_first">No available character cards, please create one first.</string>
     <string name="assign_action">Assign</string>
-    <string name="select_all_current_list">Select All in List</string>
+    <string name="select_all_current_list">Select All</string>
     <string name="target_character_card_optional">Target Character Card (Optional)</string>
     <string name="select_card_or_unbind">Select a character card or cancel binding</string>
     <string name="remove_character_card_binding">Remove Character Card Binding</string>
@@ -3391,4 +3391,27 @@
     <string name="keep_screen_on">Keep Screen On</string>
     <string name="keep_screen_on_description">Keep screen awake to prevent auto-lock during conversations</string>
     <string name="reset_all_display_settings">Reset All Display Settings</string>
+    
+    <!-- Chat History Management -->
+    <string name="default_profile_name">Default Profile</string>
+    <string name="removed_character_card_binding">Removed character card binding from %1$d chat(s)</string>
+    <string name="assigned_chats_to_character_card">Assigned %1$d chat(s) to \"%2$s\"</string>
+    <string name="assigned_chats_to_group">Assigned %1$d chat(s) to group \"%2$s\"</string>
+    <string name="deleted_unbound_workspaces">Deleted %1$d unbound workspace(s)</string>
+    <string name="delete_failed">Delete failed: %1$s</string>
+    <string name="character_card_statistics">Character Card Statistics</string>
+    <string name="character_card_statistics_subtitle">View chats and message counts for each character card</string>
+    <string name="character_fallback">C</string>
+    <string name="selected_chats_count">Selected %1$d / %2$d</string>
+    <string name="apply_changes">Apply Changes</string>
+    <string name="apply_group">Apply Group</string>
+    <string name="apply_character_card">Apply Card</string>
+    <string name="unbound_workspaces_title">Unbound Workspaces</string>
+    <string name="unbound_workspaces_subtitle">Manage workspace folders not used by any chat</string>
+    <string name="no_unbound_workspaces">No unbound workspace folders</string>
+    <string name="selected_workspaces_count">Selected %1$d / %2$d</string>
+    <string name="clear_all">Clear</string>
+    <string name="delete_selected_workspaces">Delete Selected Workspaces (%1$d)</string>
+    <string name="delete_workspaces_confirmation">Are you sure you want to delete the selected %1$d workspace(s)?\n\nAll files and data will be permanently lost.</string>
+    <string name="not_used_by_any_chat">Not used by any chat</string>
 </resources>

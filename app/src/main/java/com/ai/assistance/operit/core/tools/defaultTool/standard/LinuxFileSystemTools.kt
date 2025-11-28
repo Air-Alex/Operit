@@ -97,6 +97,7 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
     /** 读取Linux文件的完整内容 */
     override suspend fun readFileFull(tool: AITool): ToolResult {
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
+        val textOnly = tool.parameters.find { it.name == "text_only" }?.value?.toBoolean() ?: false
         PathValidator.validateLinuxPath(path, tool.name)?.let { return it }
 
         if (path.isBlank()) {
@@ -140,15 +141,17 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
                 )
             }
 
-            // 检查文件是否是文本文件
-            val sample = linuxFileSystem.readFileSample(path, 512)
-            if (sample == null || !FileUtils.isTextLike(sample)) {
-                return ToolResult(
-                    toolName = tool.name,
-                    success = false,
-                    result = StringResultData(""),
-                    error = "File does not appear to be a text file. Use specialized tools for binary files."
-                )
+            // 检查文件是否是文本文件（如果启用了 text_only）
+            if (textOnly) {
+                val sample = linuxFileSystem.readFileSample(path, 512)
+                if (sample == null || !FileUtils.isTextLike(sample)) {
+                    return ToolResult(
+                        toolName = tool.name,
+                        success = false,
+                        result = StringResultData(""),
+                        error = "Skipped non-text file: $path"
+                    )
+                }
             }
 
             val content = linuxFileSystem.readFile(path)
@@ -322,10 +325,11 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
         }
     }
 
-    /** 读取Linux文件的部分内容（分页） */
+    /** 按行号范围读取Linux文件内容（行号从1开始，包括开始行和结束行） */
     override suspend fun readFilePart(tool: AITool): ToolResult {
         val path = tool.parameters.find { it.name == "path" }?.value ?: ""
-        val partIndex = tool.parameters.find { it.name == "partIndex" }?.value?.toIntOrNull() ?: 0
+        val startLineParam = tool.parameters.find { it.name == "start_line" }?.value?.toIntOrNull() ?: 1
+        val endLineParam = tool.parameters.find { it.name == "end_line" }?.value?.toIntOrNull()
         PathValidator.validateLinuxPath(path, tool.name)?.let { return it }
 
         if (path.isBlank()) {
@@ -356,16 +360,12 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
                 )
             }
 
-            // 获取分段大小
-            val partSize = apiPreferences.getPartSize()
-
             // 获取总行数
             val totalLines = linuxFileSystem.getLineCount(path)
-            val totalParts = (totalLines + partSize - 1) / partSize
-            val validPartIndex = partIndex.coerceIn(0, if (totalParts > 0) totalParts - 1 else 0)
 
-            val startLine = validPartIndex * partSize + 1 // 1-indexed for sed
-            val endLine = minOf(startLine + partSize - 1, totalLines)
+            // 计算实际的行号范围（行号从1开始）
+            val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
+            val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
 
             val partContent = if (totalLines > 0) {
                 linuxFileSystem.readFileLines(path, startLine, endLine) ?: ""
@@ -381,9 +381,9 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
                 result = FilePartContentData(
                     path = path,
                     content = contentWithLineNumbers,
-                    partIndex = validPartIndex,
-                    totalParts = totalParts,
-                    startLine = startLine,
+                    partIndex = 0, // 保留兼容性，但不再使用
+                    totalParts = 1, // 保留兼容性，但不再使用
+                    startLine = startLine - 1, // 转为0-based
                     endLine = endLine,
                     totalLines = totalLines
                 ),
@@ -1003,6 +1003,49 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
             success = false,
             result = StringResultData(""),
             error = "Code search (grep) is not yet implemented for Linux environment"
+        )
+    }
+
+    /** Linux上下文搜索 - 基于意图字符串查找相关文件或文件内的相关代码段 */
+    override suspend fun grepContext(tool: AITool): ToolResult {
+        val path = tool.parameters.find { it.name == "path" }?.value ?: ""
+        val intent = tool.parameters.find { it.name == "intent" }?.value ?: ""
+        val maxResults = tool.parameters.find { it.name == "max_results" }?.value?.toIntOrNull() ?: 10
+        
+        PathValidator.validateLinuxPath(path, tool.name)?.let { return it }
+
+        if (path.isBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Path parameter is required"
+            )
+        }
+
+        if (intent.isBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Intent parameter is required"
+            )
+        }
+
+        // 检查是文件还是目录
+        val isFile = linuxFileSystem.isFile(path)
+        
+        if (isFile) {
+            // 文件模式：使用父类的实现（通过读取文件内容）
+            return grepContextInFile(path, intent, maxResults, tool.name)
+        }
+        
+        // 目录模式暂不支持（需要实现Linux版本的文件搜索和评分）
+        return ToolResult(
+            toolName = tool.name,
+            success = false,
+            result = StringResultData(""),
+            error = "Directory mode for grep_context is not yet implemented for Linux environment. Please use file mode (provide a file path instead of a directory)."
         )
     }
 
