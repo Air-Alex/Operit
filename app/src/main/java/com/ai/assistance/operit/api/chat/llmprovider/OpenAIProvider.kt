@@ -241,9 +241,12 @@ open class OpenAIProvider(
             }
         }
         
+        // 当工具为空时，将enableToolCall视为false
+        val effectiveEnableToolCall = enableToolCall && availableTools != null && availableTools.isNotEmpty()
+        
         // 如果启用Tool Call且传入了工具列表，添加tools定义
-        if (enableToolCall && availableTools != null) {
-            val tools = buildToolDefinitions(availableTools)
+        if (effectiveEnableToolCall) {
+            val tools = buildToolDefinitions(availableTools!!)
             if (tools.length() > 0) {
                 jsonObject.put("tools", tools)
                 jsonObject.put("tool_choice", "auto") // 让模型自动决定是否使用工具
@@ -252,7 +255,7 @@ open class OpenAIProvider(
         }
         
         // 使用新的核心逻辑构建消息并获取token计数
-        val (messagesArray, tokenCount) = buildMessagesAndCountTokens(message, chatHistory)
+        val (messagesArray, tokenCount) = buildMessagesAndCountTokens(message, chatHistory, effectiveEnableToolCall)
         jsonObject.put("messages", messagesArray)
 
         // 使用分块日志函数记录完整的请求体
@@ -312,11 +315,13 @@ open class OpenAIProvider(
      * 构建消息列表并计算token（核心逻辑）
      * @param message 用户消息
      * @param chatHistory 聊天历史
+     * @param useToolCall 是否启用Tool Call格式转换（会根据工具可用性动态决定）
      * @return Pair(消息列表JSONArray, 输入token计数)
      */
     protected fun buildMessagesAndCountTokens(
             message: String,
-            chatHistory: List<Pair<String, String>>
+            chatHistory: List<Pair<String, String>>,
+            useToolCall: Boolean = false
     ): Pair<JSONArray, Int> {
         val messagesArray = JSONArray()
 
@@ -357,7 +362,7 @@ open class OpenAIProvider(
             
             for ((role, content) in mergedHistory) {
                 // 当启用Tool Call API时，转换XML格式的工具调用
-                if (enableToolCall) {
+                if (useToolCall) {
                     if (role == "assistant") {
                         // 解析assistant消息中的XML tool calls
                         val (textContent, toolCalls) = parseXmlToolCalls(content)
