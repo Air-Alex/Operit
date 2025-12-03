@@ -274,10 +274,12 @@ class MessageProcessingDelegate(
                 )
 
                 // 将字符串流共享，以便多个收集器可以使用
+                // 关键修改：设置 replay = Int.MAX_VALUE，确保 UI 重组（重新订阅）时能收到所有历史字符
+                // 文本数据占用内存极小，全量缓冲不会造成内存压力
                 val sharedCharStream =
                     responseStream.share(
                         scope = coroutineScope,
-                        replay = 0, // 不重放历史消息
+                        replay = Int.MAX_VALUE, 
                         onComplete = {
                             deferred.complete(Unit)
                             Log.d(

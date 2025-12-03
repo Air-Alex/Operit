@@ -41,6 +41,7 @@ class ChatHistoryDelegate(
     private val characterCardManager = CharacterCardManager.getInstance(context) // 新增
     private val isInitialized = AtomicBoolean(false)
     private val historyUpdateMutex = Mutex()
+    private val allowAddMessage = AtomicBoolean(true) // 控制是否允许添加消息，切换对话时设为false
 
     // This is no longer needed here as summary logic is moved.
     // private val apiPreferences = ApiPreferences(context)
@@ -118,6 +119,10 @@ class ChatHistoryDelegate(
 
             // 打开历史对话时也执行开场白同步：仅当当前会话还没有用户消息时
             syncOpeningStatementIfNoUserMessage(chatId)
+            
+            // 加载完成后，允许添加消息
+            allowAddMessage.set(true)
+            Log.d(TAG, "聊天 $chatId 加载完成，已允许添加消息")
         } catch (e: Exception) {
             Log.e(TAG, "加载聊天消息失败", e)
         }
@@ -160,7 +165,9 @@ class ChatHistoryDelegate(
                 // 更新聊天历史
                 _chatHistory.value = mergedMessages
                 
-                Log.d(TAG, "智能合并完成: ${mergedMessages.size} 条消息")
+                // 重新加载完成后，允许添加消息
+                allowAddMessage.set(true)
+                Log.d(TAG, "智能合并完成: ${mergedMessages.size} 条消息，已允许添加消息")
             } catch (e: Exception) {
                 Log.e(TAG, "智能重新加载聊天消息失败", e)
             }
@@ -310,6 +317,10 @@ class ChatHistoryDelegate(
     /** 切换聊天 */
     fun switchChat(chatId: String) {
         coroutineScope.launch {
+            // 切换对话时，禁止添加消息
+            allowAddMessage.set(false)
+            Log.d(TAG, "切换对话到 $chatId，已禁止添加消息")
+            
             val (inputTokens, outputTokens, windowSize) = getChatStatistics()
             saveCurrentChat(inputTokens, outputTokens, windowSize) // 切换前使用正确的窗口大小保存
 
@@ -528,6 +539,12 @@ class ChatHistoryDelegate(
      *   - 不存在：追加到内存，并持久化。
      */
     suspend fun addMessageToChat(message: ChatMessage, chatIdOverride: String? = null) {
+        // 如果当前不允许添加消息（正在切换对话），则忽略
+        if (!allowAddMessage.get()) {
+            Log.d(TAG, "当前不允许添加消息（正在切换对话），忽略消息: timestamp=${message.timestamp}")
+            return
+        }
+        
         historyUpdateMutex.withLock {
             val targetChatId = chatIdOverride ?: _currentChatId.value ?: return@withLock
 
@@ -544,9 +561,9 @@ class ChatHistoryDelegate(
             val existingIndex = currentMessages.indexOfFirst { it.timestamp == message.timestamp }
 
             if (existingIndex >= 0) {
-                //这一段只对消息结束的之后生效
-                if(message.contentStream == null) {
-                    Log.d(TAG, "更新消息到聊天 $targetChatId, stream is null, ts: ${message.timestamp}")
+                // 如果新消息结束了流，或者现有消息丢失了流（例如页面切换后重新加载），则允许替换以恢复流或更新最终内容
+                if(message.contentStream == null || currentMessages[existingIndex].contentStream == null) {
+                    Log.d(TAG, "更新消息到聊天 $targetChatId, condition met, ts: ${message.timestamp}")
                     val updatedMessages = currentMessages.mapIndexed { index, existingMessage ->
                         if (index == existingIndex) {
                             message // 替换为新消息对象
