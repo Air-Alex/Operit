@@ -41,6 +41,7 @@ import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.ui.features.chat.viewmodel.ChatViewModel
 import com.ai.assistance.operit.ui.features.chat.viewmodel.ChatHistoryDisplayMode
 import com.ai.assistance.operit.ui.common.rememberLocal
+import com.ai.assistance.operit.ui.features.chat.webview.workspace.WorkspaceBackupManager
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -170,6 +171,11 @@ fun ChatScreenContent(
     var exportErrorMessage by remember { mutableStateOf<String?>(null) }
     var webContentDir by remember { mutableStateOf<File?>(null) }
     var editingMessageType by remember { mutableStateOf<String?>(null) }
+    var pendingRollbackIndex by remember { mutableStateOf<Int?>(null) }
+    var pendingRewindIndex by remember { mutableStateOf<Int?>(null) }
+    var pendingRewindContent by remember { mutableStateOf<String?>(null) }
+    var rollbackPreview by remember { mutableStateOf<List<WorkspaceBackupManager.WorkspaceFileChange>>(emptyList()) }
+    var rewindPreview by remember { mutableStateOf<List<WorkspaceBackupManager.WorkspaceFileChange>>(emptyList()) }
     
     // 监听朗读状态
     val isPlaying by actualViewModel.isPlaying.collectAsState()
@@ -208,6 +214,24 @@ fun ChatScreenContent(
         }
     }
 
+    LaunchedEffect(pendingRollbackIndex) {
+        val index = pendingRollbackIndex
+        if (index != null) {
+            rollbackPreview = actualViewModel.previewWorkspaceChangesForMessage(index)
+        } else {
+            rollbackPreview = emptyList()
+        }
+    }
+
+    LaunchedEffect(pendingRewindIndex) {
+        val index = pendingRewindIndex
+        if (index != null) {
+            rewindPreview = actualViewModel.previewWorkspaceChangesForMessage(index)
+        } else {
+            rewindPreview = emptyList()
+        }
+    }
+
     val onSelectMessageToEditCallback = remember(editingMessageIndex, editingMessageContent, editingMessageType) {
         { index: Int, message: ChatMessage, senderType: String ->
             editingMessageIndex.value = index
@@ -237,6 +261,7 @@ fun ChatScreenContent(
                         onSelectMessageToEdit = onSelectMessageToEditCallback,
                         onDeleteMessage = { index -> actualViewModel.deleteMessage(index) },
                         onDeleteMessagesFrom = { index -> actualViewModel.deleteMessagesFrom(index) },
+                        onRollbackToMessage = { index -> pendingRollbackIndex = index },
                         onSpeakMessage = { content -> actualViewModel.speakMessage(content) }, // 添加朗读回调
                         onAutoReadMessage = { content -> actualViewModel.enableAutoReadAndSpeak(content) }, // 添加自动朗读回调
                         onReplyToMessage = { message -> actualViewModel.setReplyToMessage(message) }, // 添加回复回调
@@ -309,6 +334,7 @@ fun ChatScreenContent(
                         onSelectMessageToEdit = onSelectMessageToEditCallback,
                         onDeleteMessage = { index -> actualViewModel.deleteMessage(index) },
                         onDeleteMessagesFrom = { index -> actualViewModel.deleteMessagesFrom(index) },
+                        onRollbackToMessage = { index -> pendingRollbackIndex = index },
                         onSpeakMessage = { content -> actualViewModel.speakMessage(content) }, // 添加朗读回调
                         onReplyToMessage = { message -> actualViewModel.setReplyToMessage(message) }, // 添加回复回调
                         onCreateBranch = { timestamp -> actualViewModel.createBranch(timestamp) }, // 添加创建分支回调
@@ -764,12 +790,58 @@ fun ChatScreenContent(
                 onResend = {
                     val index = editingMessageIndex.value
                     if (index != null) {
-                        actualViewModel.rewindAndResendMessage(index, editingMessageContent.value)
+                        val currentChat = chatHistories.find { it.id == currentChatId }
+                        val hasWorkspace = !currentChat?.workspace.isNullOrBlank()
+
+                        if (hasWorkspace) {
+                            pendingRewindIndex = index
+                            pendingRewindContent = editingMessageContent.value
+                        } else {
+                            // 没有绑定工作区时，直接执行编辑并重发，无需确认弹窗
+                            actualViewModel.rewindAndResendMessage(index, editingMessageContent.value)
+                        }
                     }
                     editingMessageIndex.value = null
                     editingMessageContent.value = ""
                 },
                 showResendButton = editingMessageType == "user"
+            )
+        }
+
+        if (pendingRollbackIndex != null) {
+            WorkspaceChangeConfirmDialog(
+                mode = WorkspaceChangeConfirmMode.ROLLBACK,
+                changes = rollbackPreview,
+                onConfirm = {
+                    val index = pendingRollbackIndex
+                    if (index != null) {
+                        actualViewModel.rollbackToMessage(index)
+                    }
+                    pendingRollbackIndex = null
+                },
+                onDismiss = {
+                    pendingRollbackIndex = null
+                }
+            )
+        }
+
+        if (pendingRewindIndex != null && pendingRewindContent != null) {
+            WorkspaceChangeConfirmDialog(
+                mode = WorkspaceChangeConfirmMode.EDIT_AND_RESEND,
+                changes = rewindPreview,
+                onConfirm = {
+                    val index = pendingRewindIndex
+                    val content = pendingRewindContent
+                    if (index != null && content != null) {
+                        actualViewModel.rewindAndResendMessage(index, content)
+                    }
+                    pendingRewindIndex = null
+                    pendingRewindContent = null
+                },
+                onDismiss = {
+                    pendingRewindIndex = null
+                    pendingRewindContent = null
+                }
             )
         }
     }

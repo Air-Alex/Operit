@@ -124,6 +124,7 @@ fun ChatArea(
     onCopyMessage: ((ChatMessage) -> Unit)? = null,
     onDeleteMessage: ((Int) -> Unit)? = null,
     onDeleteMessagesFrom: ((Int) -> Unit)? = null,
+    onRollbackToMessage: ((Int) -> Unit)? = null, // 回滚到指定消息的回调
     onSpeakMessage: ((String) -> Unit)? = null, // 添加朗读回调参数
     onAutoReadMessage: ((String) -> Unit)? = null, // 添加自动朗读回调参数
     onReplyToMessage: ((ChatMessage) -> Unit)? = null, // 添加回复回调参数
@@ -209,6 +210,7 @@ fun ChatArea(
                         onCopyMessage = onCopyMessage,
                         onDeleteMessage = onDeleteMessage,
                         onDeleteMessagesFrom = onDeleteMessagesFrom,
+                        onRollbackToMessage = onRollbackToMessage,
                         onSpeakMessage = onSpeakMessage, // 传递朗读回调
                         onReplyToMessage = onReplyToMessage, // 传递回复回调
                         onCreateBranch = onCreateBranch, // 传递创建分支回调
@@ -278,6 +280,7 @@ private fun MessageItem(
     onCopyMessage: ((ChatMessage) -> Unit)?,
     onDeleteMessage: ((Int) -> Unit)?,
     onDeleteMessagesFrom: ((Int) -> Unit)?,
+    onRollbackToMessage: ((Int) -> Unit)? = null, // 回滚到指定消息的回调
     onSpeakMessage: ((String) -> Unit)? = null, // 添加朗读回调
     onReplyToMessage: ((ChatMessage) -> Unit)? = null, // 添加回复回调
     onCreateBranch: ((Long) -> Unit)? = null, // 添加创建分支回调
@@ -442,6 +445,29 @@ private fun MessageItem(
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = stringResource(id = R.string.edit_and_resend),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    modifier = Modifier.height(36.dp)
+                )
+                // 回滚到此处
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(id = R.string.rollback_to_here),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 13.sp
+                        )
+                    },
+                    onClick = {
+                        onRollbackToMessage?.invoke(index)
+                        showContextMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = stringResource(id = R.string.rollback_to_here),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )

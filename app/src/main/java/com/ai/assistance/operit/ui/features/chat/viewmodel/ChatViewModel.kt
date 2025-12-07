@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.ai.assistance.operit.ui.floating.ui.pet.AvatarEmotionManager
 import com.ai.assistance.operit.api.voice.VoiceService
 import com.ai.assistance.operit.api.voice.VoiceServiceFactory
 import com.ai.assistance.operit.data.preferences.SpeechServicesPreferences
@@ -927,6 +928,109 @@ class ChatViewModel(private val context: Context) : ViewModel() {
             } catch (e: Exception) {
                 Log.e(TAG, "回档并重新发送消息失败", e)
                 uiStateDelegate.showErrorMessage("回档失败: ${e.message}")
+            }
+        }
+    }
+
+    suspend fun previewWorkspaceChangesForMessage(index: Int): List<WorkspaceBackupManager.WorkspaceFileChange> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val currentHistory = chatHistoryDelegate.chatHistory.value.toMutableList()
+
+                if (index < 0 || index >= currentHistory.size) {
+                    emptyList()
+                } else {
+                    val rewindTimestamp = if (index > 0) {
+                        currentHistory[index - 1].timestamp
+                    } else {
+                        0L
+                    }
+
+                    val chatId = currentChatId.value
+                    val currentChat = chatHistories.value.find { it.id == chatId }
+                    val workspacePath = currentChat?.workspace
+
+                    if (workspacePath.isNullOrBlank()) {
+                        emptyList()
+                    } else {
+                        val workspaceDir = File(workspacePath)
+                        val backupDir = File(workspaceDir, ".backup")
+                        val existingBackups = backupDir.listFiles { file ->
+                            file.isFile && file.name.endsWith(".json")
+                        }?.mapNotNull {
+                            it.nameWithoutExtension.toLongOrNull()
+                        }?.sorted() ?: emptyList()
+
+                        val newerBackups = existingBackups.filter { it > rewindTimestamp }
+                        if (newerBackups.isEmpty()) {
+                            emptyList()
+                        } else {
+                            val restoreTimestamp = newerBackups.first()
+                            WorkspaceBackupManager.getInstance(context)
+                                .previewChanges(workspacePath, restoreTimestamp)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "预览工作区变更失败", e)
+                emptyList()
+            }
+        }
+    }
+
+    fun rollbackToMessage(index: Int) {
+        viewModelScope.launch {
+            try {
+                val currentHistory = chatHistoryDelegate.chatHistory.value.toMutableList()
+
+                if (index < 0 || index >= currentHistory.size) {
+                    uiStateDelegate.showErrorMessage("无效的消息索引")
+                    return@launch
+                }
+
+                val targetMessage = currentHistory[index]
+
+                // 目前UI只允许对用户消息执行回滚，这里再做一次保护
+                if (targetMessage.sender != "user") {
+                    uiStateDelegate.showErrorMessage("只能对用户消息执行此操作")
+                    return@launch
+                }
+
+                val rewindTimestamp = if (index > 0) {
+                    currentHistory[index - 1].timestamp
+                } else {
+                    0L
+                }
+
+                val chatId = currentChatId.value
+                val currentChat = chatHistories.value.find { it.id == chatId }
+                val workspacePath = currentChat?.workspace
+
+                if (!workspacePath.isNullOrBlank()) {
+                    Log.d(TAG, "[Rollback] Rewinding workspace to timestamp: $rewindTimestamp")
+                    withContext(Dispatchers.IO) {
+                        WorkspaceBackupManager.getInstance(context)
+                            .syncState(workspacePath, rewindTimestamp)
+                    }
+                    Log.d(TAG, "[Rollback] Workspace rewind complete.")
+                }
+
+                // 删除目标消息及其之后的所有消息
+                val newHistory = currentHistory.subList(0, index)
+
+                val timestampOfFirstDeletedMessage = currentHistory[index].timestamp
+                chatHistoryDelegate.truncateChatHistory(
+                    newHistory,
+                    timestampOfFirstDeletedMessage
+                )
+
+                val plainText = AvatarEmotionManager.stripXmlLikeTags(targetMessage.content)
+                updateUserMessage(TextFieldValue(plainText))
+
+                uiStateDelegate.showToast("已回滚，消息内容已放入输入框")
+            } catch (e: Exception) {
+                Log.e(TAG, "回滚到指定消息失败", e)
+                uiStateDelegate.showErrorMessage("回滚失败: ${e.message}")
             }
         }
     }

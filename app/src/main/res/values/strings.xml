@@ -26,6 +26,7 @@
     <string name="menu">菜单</string>
     <string name="token_config">获取密钥</string>
     <string name="desktop_pet_start">启动桌宠</string>
+    <string name="nav_event_campaign">创作激励活动</string>
     
     <!-- 工作流相关 -->
     <string name="workflow_list_title">工作流列表</string>
@@ -1038,6 +1039,7 @@
     <string name="reply_message">回复</string>
     <string name="stop_reading">停止朗读</string>
     <string name="edit_and_resend">编辑并重发</string>
+    <string name="rollback_to_here">回滚到此处</string>
     <string name="select_copy">选择并复制</string>
     <string name="insert_summary">插入总结</string>
     <string name="create_branch">创建分支</string>
@@ -1046,7 +1048,19 @@
 
     <string name="modify_memory">修改记忆</string>
     <string name="delete_from_here">删除到此</string>
+    <string name="confirm_rollback_title">确认回滚</string>
+    <string name="confirm_rollback_message">将删除此消息之后的所有消息，并将已绑定的工作区回滚到此消息之前的状态。此操作不可撤销，确定继续吗？</string>
+    <string name="confirm_rollback_confirm">确认回滚</string>
+    <string name="confirm_edit_and_resend_title">确认编辑并重发</string>
+    <string name="confirm_edit_and_resend_message">将删除此消息之后的所有消息，并把已编辑的内容作为新的提问重新发送，同时回滚已绑定的工作区到此消息之前的状态。此操作不可撤销，确定继续吗？</string>
+    <string name="confirm_edit_and_resend_confirm">确认编辑并重发</string>
+    <string name="workspace_changes_preview_title">工作区文件变更预览</string>
+    <string name="workspace_change_added">新增</string>
+    <string name="workspace_change_deleted">删除</string>
+    <string name="workspace_change_modified">修改</string>
+    <string name="workspace_changes_more">以及另外 %1$d 个文件变更</string>
     <string name="multi_select">多选</string>
+
     <string name="exit_multi_select">退出多选</string>
     <string name="select_all_messages">全选</string>
     <string name="clear_selection">取消</string>

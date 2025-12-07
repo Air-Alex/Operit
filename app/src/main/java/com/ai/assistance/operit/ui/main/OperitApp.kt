@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.compose.rememberNavController
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.data.mcp.MCPRepository
@@ -39,8 +40,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.res.stringResource
 import com.ai.assistance.operit.ui.features.update.screens.UpdateScreen
+import java.time.LocalDateTime
 
 // 为TopAppBar的actions提供CompositionLocal
 // 它允许子组件（如AIChatScreen）向上提供它们的action Composable
@@ -56,14 +57,13 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
     val context = LocalContext.current
     val announcementPreferences = remember { ChatAnnouncementPreferences(context) }
 
-
     // Navigation state - using a custom back stack
     var selectedItem by remember { mutableStateOf(initialNavItem) }
     var currentScreen by remember {
         mutableStateOf(OperitRouter.getScreenForNavItem(initialNavItem))
     }
     val backStack = remember { mutableStateListOf<Screen>() }
-    
+
     // 跟踪是否是返回操作
     var isNavigatingBack by remember { mutableStateOf(false) }
 
@@ -118,7 +118,7 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
         if (backStack.isNotEmpty()) {
             // 设置为返回导航
             isNavigatingBack = true
-            
+
             val previousScreen = backStack.removeLast()
             currentScreen = previousScreen
             // Update the selected NavItem if the previous screen has one.
@@ -164,6 +164,8 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
         showChatBindingAnnouncement = false
     }
 
+    val isEventCampaignActive = remember { isEventCampaignActive() }
+
     // Navigation items grouped by category
     val navGroups =
             listOf(
@@ -185,7 +187,16 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
                                     // NavItem.Workflow,
                             )
                     ),
-                    NavGroup("系统", listOf(NavItem.Settings, NavItem.Help, NavItem.About, NavItem.UpdateHistory))
+                    NavGroup(
+                            "系统",
+                            listOfNotNull(
+                                    NavItem.Settings,
+                                    if (isEventCampaignActive) NavItem.EventCampaign else null,
+                                    NavItem.Help,
+                                    NavItem.About,
+                                    NavItem.UpdateHistory
+                            )
+                    )
             )
 
     // Flattened list for components that need it
@@ -302,3 +313,12 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
     }
 }
 
+fun isEventCampaignActive(): Boolean {
+    return try {
+        val now = LocalDateTime.now()
+        val end = LocalDateTime.of(2025, 12, 24, 23, 59)
+        now.isBefore(end)
+    } catch (e: Exception) {
+        false
+    }
+}

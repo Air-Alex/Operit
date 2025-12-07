@@ -24,6 +24,7 @@
     <string name="menu">Menu</string>
     <string name="token_config">Get API Key</string>
     <string name="desktop_pet_start">Start Desktop Pet</string>
+    <string name="nav_event_campaign">Creator Incentive Campaign</string>
     
     <!-- Workflow related -->
     <string name="workflow_list_title">Workflow List</string>
@@ -290,6 +291,7 @@
     <string name="disable_stream_output_desc">When disabled, AI responses will be displayed all at once instead of streaming word by word</string>
     <string name="stop_reading">Stop Reading</string>
     <string name="edit_and_resend">Edit &amp; Resend</string>
+    <string name="rollback_to_here">Rollback to Here</string>
     <string name="reply_message">Reply</string>
     <string name="select_copy">Select &amp; Copy</string>
     <string name="insert_summary">Insert Summary</string>
@@ -299,7 +301,19 @@
 
     <string name="modify_memory">Modify Memory</string>
     <string name="delete_from_here">Delete From Here</string>
+    <string name="confirm_rollback_title">Confirm rollback</string>
+    <string name="confirm_rollback_message">This will delete all messages after this one and roll back the bound workspace to the state before this message. This action cannot be undone. Continue?</string>
+    <string name="confirm_rollback_confirm">Rollback</string>
+    <string name="confirm_edit_and_resend_title">Confirm edit &amp; resend</string>
+    <string name="confirm_edit_and_resend_message">This will delete all messages after this one, resend the edited content as a new request, and roll back the bound workspace to the state before this message. This action cannot be undone. Continue?</string>
+    <string name="confirm_edit_and_resend_confirm">Edit &amp; Resend</string>
+    <string name="workspace_changes_preview_title">Workspace changes preview</string>
+    <string name="workspace_change_added">Added</string>
+    <string name="workspace_change_deleted">Deleted</string>
+    <string name="workspace_change_modified">Modified</string>
+    <string name="workspace_changes_more">and %1$d more files</string>
     <string name="multi_select">Multi-select</string>
+
     <string name="exit_multi_select">Exit Multi-select</string>
     <string name="select_all_messages">Select all</string>
     <string name="clear_selection">Cancel</string>
@@ -492,9 +506,10 @@
     <string name="unauthorized">Unauthorized</string>
     <string name="install_shizuku">Install Shizuku</string>
     <string name="open_shizuku">Open Shizuku App</string>
-    <string name="show_help">Show Help</string>
-    <string name="hide_help">Hide Help</string>
-    <string name="request_permission">Request Shizuku Permission</string>
+    <string name="show_help">Show help</string>
+    <string name="hide_help">Hide help</string>
+    <string name="request_permission">Request Shizuku permission</string>
+    <string name="screen_title_html_packager">HTML Packager</string>
     <string name="execute_shell">Execute Shell Command</string>
     <string name="enter_command">Enter ADB Command</string>
     <string name="show_samples">Show Example Commands</string>
