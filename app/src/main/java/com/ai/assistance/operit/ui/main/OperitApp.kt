@@ -167,37 +167,36 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
     val isEventCampaignActive = remember { isEventCampaignActive() }
 
     // Navigation items grouped by category
-    val navGroups =
+    val navGroups = listOf(
+        NavGroup(
+            "AI功能",
             listOf(
-                    NavGroup(
-                            "AI功能",
-                            listOf(
-                                    NavItem.AiChat,
-                                    NavItem.AssistantConfig,
-                                    NavItem.Packages,
-                                    NavItem.MemoryBase,
-                                    NavItem.TokenConfig
-                            )
-                    ),
-                    NavGroup(
-                            "工具",
-                            listOf(
-                                    NavItem.Toolbox,
-                                    NavItem.ShizukuCommands,
-                                    // NavItem.Workflow,
-                            )
-                    ),
-                    NavGroup(
-                            "系统",
-                            listOfNotNull(
-                                    NavItem.Settings,
-                                    if (isEventCampaignActive) NavItem.EventCampaign else null,
-                                    NavItem.Help,
-                                    NavItem.About,
-                                    NavItem.UpdateHistory
-                            )
-                    )
+                NavItem.AiChat,
+                NavItem.AssistantConfig,
+                NavItem.Packages,
+                NavItem.MemoryBase,
+                NavItem.TokenConfig
             )
+        ),
+        NavGroup(
+            "工具",
+            listOf(
+                NavItem.Toolbox,
+                NavItem.ShizukuCommands,
+                // NavItem.Workflow,
+            )
+        ),
+        NavGroup(
+            "系统",
+            listOfNotNull(
+                NavItem.Settings,
+                if (isEventCampaignActive) NavItem.EventCampaign else null,
+                NavItem.Help,
+                NavItem.About,
+                NavItem.UpdateHistory
+            )
+        )
+    )
 
     // Flattened list for components that need it
     val navItems = navGroups.flatMap { it.items }
@@ -235,68 +234,68 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
 
     // Main app container
     Box(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
-        CompositionLocalProvider(LocalTopBarActions provides { actions: @Composable RowScope.() -> Unit -> 
-            topBarActions = actions 
+        CompositionLocalProvider(LocalTopBarActions provides { actions: @Composable RowScope.() -> Unit ->
+            topBarActions = actions
         }) {
             if (useTabletLayout) {
                 // Tablet layout
                 TabletLayout(
-                        currentScreen = currentScreen,
-                        selectedItem = selectedItem,
-                        isTabletSidebarExpanded = isTabletSidebarExpanded,
-                        isLoading = isLoading,
-                        navGroups = navGroups,
-                        navItems = navItems,
-                        isNetworkAvailable = isNetworkAvailable,
-                        networkType = networkType,
-                        navController = navController,
-                        scope = scope,
-                        drawerState = drawerState,
-                        showFpsCounter = showFpsCounter,
-                        tabletSidebarWidth = tabletSidebarWidth,
-                        collapsedTabletSidebarWidth = collapsedTabletSidebarWidth,
-                        onScreenChange = { screen -> navigateTo(screen) },
-                        onNavItemChange = { item ->
-                            navigateTo(
-                                    OperitRouter.getScreenForNavItem(item),
-                                    fromDrawer = true
-                            )
-                        },
-                        onToggleSidebar = {
-                                isTabletSidebarExpanded = !isTabletSidebarExpanded
-                        },
-                        navigateToTokenConfig = ::navigateToTokenConfig,
-                        canGoBack = canGoBack,
-                        onGoBack = ::goBack,
-                        isNavigatingBack = isNavigatingBack,
-                        topBarActions = { topBarActions() }
+                    currentScreen = currentScreen,
+                    selectedItem = selectedItem,
+                    isTabletSidebarExpanded = isTabletSidebarExpanded,
+                    isLoading = isLoading,
+                    navGroups = navGroups,
+                    navItems = navItems,
+                    isNetworkAvailable = isNetworkAvailable,
+                    networkType = networkType,
+                    navController = navController,
+                    scope = scope,
+                    drawerState = drawerState,
+                    showFpsCounter = showFpsCounter,
+                    tabletSidebarWidth = tabletSidebarWidth,
+                    collapsedTabletSidebarWidth = collapsedTabletSidebarWidth,
+                    onScreenChange = { screen -> navigateTo(screen) },
+                    onNavItemChange = { item ->
+                        navigateTo(
+                            OperitRouter.getScreenForNavItem(item),
+                            fromDrawer = true
+                        )
+                    },
+                    onToggleSidebar = {
+                        isTabletSidebarExpanded = !isTabletSidebarExpanded
+                    },
+                    navigateToTokenConfig = ::navigateToTokenConfig,
+                    canGoBack = canGoBack,
+                    onGoBack = ::goBack,
+                    isNavigatingBack = isNavigatingBack,
+                    topBarActions = { topBarActions() }
                 )
             } else {
                 // Phone layout
                 PhoneLayout(
-                        currentScreen = currentScreen,
-                        selectedItem = selectedItem,
-                        isLoading = isLoading,
-                        navGroups = navGroups,
-                        isNetworkAvailable = isNetworkAvailable,
-                        networkType = networkType,
-                        drawerWidth = drawerWidth,
-                        navController = navController,
-                        scope = scope,
-                        drawerState = drawerState,
-                        showFpsCounter = showFpsCounter,
-                        onScreenChange = { screen -> navigateTo(screen) },
-                        onNavItemChange = { item ->
-                            navigateTo(
-                                    OperitRouter.getScreenForNavItem(item),
-                                    fromDrawer = true
-                            )
-                        },
-                        navigateToTokenConfig = ::navigateToTokenConfig,
-                        canGoBack = canGoBack,
-                        onGoBack = ::goBack,
-                        isNavigatingBack = isNavigatingBack,
-                        topBarActions = { topBarActions() }
+                    currentScreen = currentScreen,
+                    selectedItem = selectedItem,
+                    isLoading = isLoading,
+                    navGroups = navGroups,
+                    isNetworkAvailable = isNetworkAvailable,
+                    networkType = networkType,
+                    drawerWidth = drawerWidth,
+                    navController = navController,
+                    scope = scope,
+                    drawerState = drawerState,
+                    showFpsCounter = showFpsCounter,
+                    onScreenChange = { screen -> navigateTo(screen) },
+                    onNavItemChange = { item ->
+                        navigateTo(
+                            OperitRouter.getScreenForNavItem(item),
+                            fromDrawer = true
+                        )
+                    },
+                    navigateToTokenConfig = ::navigateToTokenConfig,
+                    canGoBack = canGoBack,
+                    onGoBack = ::goBack,
+                    isNavigatingBack = isNavigatingBack,
+                    topBarActions = { topBarActions() }
                 )
             }
         }
@@ -305,7 +304,7 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
             ChatBindingAnnouncementDialog(
                 onNavigateToChatManagement = {
                     dismissChatBindingAnnouncement()
-                    navigateTo(Screen.ChatHistorySettings)
+                    navigateTo(Screen.Help)
                 },
                 onDismiss = { dismissChatBindingAnnouncement() }
             )

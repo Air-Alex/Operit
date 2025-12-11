@@ -38,17 +38,11 @@ import androidx.compose.ui.unit.dp
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.core.tools.PackageTool
 import com.ai.assistance.operit.core.tools.ToolPackage
-import com.ai.assistance.operit.core.tools.automatic.UIFunction
-import com.ai.assistance.operit.core.tools.automatic.UIRouter
-import com.ai.assistance.operit.core.tools.automatic.config.AutomationPackageInfo
-import com.ai.assistance.operit.core.tools.automatic.config.AutomationPackageManager
 import com.ai.assistance.operit.core.tools.packTool.PackageManager
 import com.ai.assistance.operit.data.mcp.MCPRepository
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.ui.features.packages.components.EmptyState
 import com.ai.assistance.operit.ui.features.packages.components.PackageTab
-import com.ai.assistance.operit.ui.features.packages.dialogs.AutomationFunctionExecutionDialog
-import com.ai.assistance.operit.ui.features.packages.dialogs.AutomationPackageDetailsDialog
 import com.ai.assistance.operit.ui.features.packages.dialogs.PackageDetailsDialog
 import com.ai.assistance.operit.ui.features.packages.dialogs.ScriptExecutionDialog
 import com.ai.assistance.operit.ui.features.packages.lists.PackagesList
@@ -68,7 +62,6 @@ fun PackageManagerScreen(
     val packageManager = remember {
         PackageManager.getInstance(context, AIToolHandler.getInstance(context))
     }
-    val automationManager = remember { AutomationPackageManager.getInstance(context) }
     val scope = rememberCoroutineScope()
     val mcpRepository = remember { MCPRepository(context) }
 
@@ -78,9 +71,6 @@ fun PackageManagerScreen(
     // UI展示用的导入状态列表，与后端状态分离
     val visibleImportedPackages = remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // State for automation configs
-    val automationConfigs = remember { mutableStateOf<List<AutomationPackageInfo>>(emptyList()) }
-
     // State for selected package and showing details
     var selectedPackage by remember { mutableStateOf<String?>(null) }
     var showDetails by remember { mutableStateOf(false) }
@@ -89,12 +79,6 @@ fun PackageManagerScreen(
     var showScriptExecution by remember { mutableStateOf(false) }
     var selectedTool by remember { mutableStateOf<PackageTool?>(null) }
     var scriptExecutionResult by remember { mutableStateOf<ToolResult?>(null) }
-
-    // State for automation dialogs
-    var selectedAutomationPackage by remember { mutableStateOf<AutomationPackageInfo?>(null) }
-    var showAutomationDetails by remember { mutableStateOf(false) }
-    var selectedAutomationFunction by remember { mutableStateOf<UIFunction?>(null) }
-    var showAutomationExecution by remember { mutableStateOf(false) }
 
     // State for snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -194,12 +178,6 @@ fun PackageManagerScreen(
                 }
             }
 
-    // Initialize UIRouter for automation execution
-    val uiRouter = remember {
-        val toolHandler = AIToolHandler.getInstance(context)
-        UIRouter(context, toolHandler)
-            }
-
     // Load packages
     LaunchedEffect(Unit) {
         try {
@@ -207,10 +185,8 @@ fun PackageManagerScreen(
             importedPackages.value = packageManager.getImportedPackages()
             // 初始化UI显示状态
             visibleImportedPackages.value = importedPackages.value.toList()
-
-            automationConfigs.value = automationManager.getAllPackageInfo()
         } catch (e: Exception) {
-            AppLogger.e("PackageManagerScreen", "Failed to load packages or configs", e)
+            AppLogger.e("PackageManagerScreen", "Failed to load packages", e)
         }
     }
 
@@ -547,128 +523,6 @@ fun PackageManagerScreen(
                             scriptExecutionResult = null
                         }
                 )
-            }
-
-            // Automation Package Details Dialog
-            if (showAutomationDetails && selectedAutomationPackage != null) {
-                AutomationPackageDetailsDialog(
-                    packageInfo = selectedAutomationPackage!!,
-                    packageManager = automationManager,
-                    onExecuteFunction = { function ->
-                        selectedAutomationFunction = function
-                        showAutomationDetails = false
-                        showAutomationExecution = true
-                    },
-                    onDismiss = { showAutomationDetails = false },
-                    onPackageDeleted = {
-                        scope.launch {
-                            // Refresh automation configs list after deletion
-                            automationConfigs.value = automationManager.getAllPackageInfo()
-                            snackbarHostState.showSnackbar("自动化配置删除成功")
-                        }
-                    }
-                )
-            }
-
-            // Automation Function Execution Dialog
-            if (showAutomationExecution && selectedAutomationFunction != null) {
-                AutomationFunctionExecutionDialog(
-                    function = selectedAutomationFunction!!,
-                    uiRouter = uiRouter,
-                    packageManager = automationManager,
-                    onDismiss = {
-                        showAutomationExecution = false
-                        selectedAutomationFunction = null
-                    }
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AutomationConfigList(
-    configs: List<AutomationPackageInfo>,
-    onConfigClick: (AutomationPackageInfo) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        items(configs) { config ->
-            Card(
-                onClick = { onConfigClick(config) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Build,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = config.name,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = config.description.takeIf { it.isNotBlank() } ?: stringResource(R.string.no_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                color = if (config.isBuiltIn) 
-                                    MaterialTheme.colorScheme.primaryContainer 
-                                else 
-                                    MaterialTheme.colorScheme.secondaryContainer,
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = if (config.isBuiltIn) stringResource(R.string.builtin) else stringResource(R.string.external),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (config.isBuiltIn)
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    else
-                                        MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = config.packageName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    
-                                                Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = stringResource(R.string.view_details),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                }
             }
         }
     }

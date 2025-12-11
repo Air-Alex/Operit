@@ -1,7 +1,7 @@
 /* METADATA
 {
     "name": "Automatic_ui_subagent",
-    "description": "提供基于独立UI控制器模型（例如 autoglm-phone-9b）的高层UI自动化子代理工具，用于根据自然语言意图自动规划点击/输入/滑动等操作。仅在用户明确要求使用智能体控制时调用，默认场景请优先使用普通UI自动化工具包。",
+    "description": "兼容AutoGLM，提供基于独立UI控制器模型（例如 autoglm-phone-9b）的高层UI自动化子代理工具，用于根据自然语言意图自动规划点击/输入/滑动等操作。仅在用户明确要求使用智能体控制时调用，默认场景请优先使用普通UI自动化工具包。",
     "tools": [
         {
             "name": "run_subagent",

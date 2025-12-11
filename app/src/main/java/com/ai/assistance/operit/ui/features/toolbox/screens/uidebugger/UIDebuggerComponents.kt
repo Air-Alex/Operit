@@ -2,6 +2,8 @@ package com.ai.assistance.operit.ui.features.toolbox.screens.uidebugger
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,96 +11,58 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ai.assistance.operit.core.tools.automatic.UIEdgeDefinition
-import com.ai.assistance.operit.core.tools.automatic.UIFunction
-import com.ai.assistance.operit.core.tools.automatic.UINode
-import com.ai.assistance.operit.core.tools.automatic.config.AutomationPackageInfo
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Launch
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
-import com.ai.assistance.operit.core.tools.automatic.UINodeType
-import com.ai.assistance.operit.core.tools.automatic.UIOperation
-import com.ai.assistance.operit.core.tools.automatic.UISelector
-import com.ai.assistance.operit.core.tools.system.action.ActionListener
-import androidx.compose.ui.text.input.KeyboardType
 import com.ai.assistance.operit.ui.features.toolbox.screens.uidebugger.components.ActivityMonitorPanel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import androidx.compose.material.icons.filled.CheckCircle
 
 
 @Composable
@@ -170,13 +134,6 @@ fun UIDebuggerOverlay(
                     viewModel.toggleActivityMonitor()
                     // 不再自动停止监听，让用户手动控制
                 },
-                // 新增自动构建相关参数
-                autoGraphBuilding = uiState.autoGraphBuilding,
-                detectedCurrentPackageName = uiState.detectedCurrentPackageName,
-                selectedPackage = uiState.selectedPackage,
-                autoGeneratedNodes = uiState.autoGeneratedNodes,
-                autoGeneratedEdges = uiState.autoGeneratedEdges,
-                onToggleAutoGraphBuilding = { viewModel.toggleAutoGraphBuilding() },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(16.dp)
@@ -464,583 +421,6 @@ enum class DebuggerMode {
     ACTIVITY_MONITOR  // Activity监听模式
 }
 
-
-
-@Composable
-fun NodeListPanel(
-    packageInfo: com.ai.assistance.operit.core.tools.automatic.config.AutomationPackageInfo,
-    nodes: List<com.ai.assistance.operit.core.tools.automatic.UINode>,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .widthIn(max = 350.dp)
-            .heightIn(max = 500.dp),
-        shape = RoundedCornerShape(8.dp),
-        shadowElevation = 8.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.List,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "${packageInfo.name} - 页面节点",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭"
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            if (nodes.isEmpty()) {
-                Text(
-                    text = "没有找到页面节点",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    items(nodes) { node ->
-                        NodeItem(node = node, isSelected = false, onClick = {})
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun NodeItem(
-    node: UINode,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val colors = if (isSelected) {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    } else {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    }
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick),
-        colors = colors
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Text(
-                text = node.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "类型: ${node.nodeType}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun NodeItemWithActions(
-    node: UINode,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
-) {
-    val colors = if (isSelected) {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    } else {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    }
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick)
-            .then(
-                if (isSelected) {
-                    Modifier.drawBehind {
-                        drawRect(
-                            color = androidx.compose.ui.graphics.Color.Blue,
-                            style = Stroke(width = 3.dp.toPx())
-                        )
-                    }
-                } else {
-                    Modifier
-                }
-            ),
-        colors = colors,
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isSelected) 6.dp else 2.dp
-        )
-    ) {
-        ListItem(
-            headlineContent = { 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 选中状态指示器
-                    if (isSelected) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = "已选中",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Text(
-                        text = node.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-                        color = if (isSelected) 
-                            MaterialTheme.colorScheme.primary 
-                        else 
-                            MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            supportingContent = { 
-                Column {
-                    Text(
-                        text = "类型: ${node.nodeType}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) 
-                            MaterialTheme.colorScheme.onPrimaryContainer 
-                        else 
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    node.activityName?.let { activityName ->
-                        Text(
-                            text = "Activity: $activityName",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) 
-                                MaterialTheme.colorScheme.onPrimaryContainer 
-                            else 
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            trailingContent = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // 编辑按钮
-                    onEdit?.let { editCallback ->
-                        IconButton(
-                            onClick = editCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "编辑节点",
-                                modifier = Modifier.size(18.dp),
-                                tint = if (isSelected) 
-                                    MaterialTheme.colorScheme.primary 
-                                else 
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    
-                    // 删除按钮
-                    onDelete?.let { deleteCallback ->
-                        IconButton(
-                            onClick = deleteCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除节点",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun EdgeItem(
-    fromNodeName: String,
-    edge: UIEdgeDefinition,
-    onClick: () -> Unit,
-    onShowDetails: ((UIEdgeDefinition, String) -> Unit)? = null
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        ListItem(
-            headlineContent = { Text("到: ${edge.toNodeName}", fontWeight = FontWeight.Bold) },
-            supportingContent = {
-                val description = edge.operations.joinToString(separator = " -> ") { it.description }
-                Text("操作: $description")
-            },
-            trailingContent = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // 查看详情按钮
-                    onShowDetails?.let { showDetailsCallback ->
-                        IconButton(
-                            onClick = { showDetailsCallback(edge, fromNodeName) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "查看操作详情",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    // 跳转按钮
-                Icon(Icons.Default.ArrowForward, contentDescription = "跳转到节点")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun EdgeItemWithActions(
-    fromNodeName: String,
-    edge: UIEdgeDefinition,
-    onClick: () -> Unit,
-    onShowDetails: ((UIEdgeDefinition, String) -> Unit)? = null,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
-) {
-    Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        ListItem(
-            headlineContent = { Text("到: ${edge.toNodeName}", fontWeight = FontWeight.Bold) },
-            supportingContent = { EdgeOperationDetails(edge = edge) },
-            trailingContent = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // 编辑按钮
-                    onEdit?.let { editCallback ->
-                        IconButton(
-                            onClick = editCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "编辑边",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    
-                    // 删除按钮
-                    onDelete?.let { deleteCallback ->
-                        IconButton(
-                            onClick = deleteCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除边",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    
-                    // 查看详情按钮
-                    onShowDetails?.let { showDetailsCallback ->
-                        IconButton(
-                            onClick = { showDetailsCallback(edge, fromNodeName) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "查看操作详情",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    
-                    // 跳转按钮
-                    Icon(Icons.Default.ArrowForward, contentDescription = "跳转到节点")
-                }
-            }
-        )
-    }
-}
-
-
-
-@Composable
-private fun getOperationIcon(operation: UIOperation): ImageVector {
-    return when (operation) {
-        is UIOperation.Click -> Icons.Filled.TouchApp
-        is UIOperation.Input -> Icons.Filled.TextFields
-        is UIOperation.Wait -> Icons.Filled.Timer
-        is UIOperation.ValidateElement -> Icons.Filled.Verified
-        is UIOperation.PressKey -> Icons.Filled.Keyboard
-        is UIOperation.LaunchApp -> Icons.Filled.Launch
-        is UIOperation.KillApp -> Icons.Filled.Close
-        is UIOperation.NoOp -> Icons.Filled.Info
-        is UIOperation.Swipe -> Icons.Filled.ArrowForward
-        is UIOperation.ValidateState -> Icons.Filled.VerifiedUser
-        is UIOperation.WaitForPage -> Icons.Filled.Timer
-        is UIOperation.Sequential -> Icons.Filled.MoreVert
-    }
-}
-
-@Composable
-private fun EdgeOperationDetails(edge: UIEdgeDefinition) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // Operation Icons
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            edge.operations.forEach { op ->
-                Icon(
-                    imageVector = getOperationIcon(op),
-                    contentDescription = op.javaClass.simpleName,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Description with highlighted template variables
-        val operationText = remember(edge.operations) {
-            buildAnnotatedString {
-                val fullDescription = edge.operations.joinToString(" -> ") { it.description }
-                val pattern = "\\{\\{([^}]+)\\}\\}".toRegex()
-                var lastIndex = 0
-
-                if (fullDescription.isBlank()) {
-                    append("No description")
-                } else {
-                    pattern.findAll(fullDescription).forEach { matchResult ->
-                        val startIndex = matchResult.range.first
-                        val endIndex = matchResult.range.last + 1
-                        if (startIndex > lastIndex) {
-                            append(fullDescription.substring(lastIndex, startIndex))
-                        }
-                        // Corrected: Define SpanStyle directly without calling a Composable
-                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append(fullDescription.substring(startIndex, endIndex))
-                        }
-                        lastIndex = endIndex
-                    }
-                    if (lastIndex < fullDescription.length) {
-                        append(fullDescription.substring(lastIndex))
-                    }
-                }
-            }
-        }
-
-                Text(
-            text = operationText,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f) // Give weight to allow wrapping and ellipsis
-        )
-
-        // Validation Icon
-        if (edge.validation != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Filled.VerifiedUser,
-                contentDescription = "Has Validation Step",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun DetailRow(
-    label: String,
-    value: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.3f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(0.7f)
-        )
-    }
-}
-
-@Composable
-fun FunctionItemWithActions(
-    function: UIFunction,
-    onClick: () -> Unit,
-    onShowDetails: (() -> Unit)? = null,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        ListItem(
-            headlineContent = { Text(function.name, fontWeight = FontWeight.Bold) },
-            supportingContent = { Text(function.description) },
-            trailingContent = {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    onEdit?.let { editCallback ->
-                        IconButton(
-                            onClick = editCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "编辑功能",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    onDelete?.let { deleteCallback ->
-                        IconButton(
-                            onClick = deleteCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除功能",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    onShowDetails?.let { showDetailsCallback ->
-                        IconButton(
-                            onClick = showDetailsCallback,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "查看功能详情",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun NodeFunctionItem(
-    function: UIFunction,
-    onShowDetails: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
-    ) {
-        ListItem(
-            headlineContent = { 
-                Text(
-                    text = function.name,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = function.description,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            },
-            leadingContent = {
-                Icon(
-                    Icons.Default.Build,
-                    contentDescription = "功能",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            },
-            trailingContent = {
-                IconButton(
-                    onClick = onShowDetails,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = "查看功能详情",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        )
-    }
-}
-
 @Composable
 fun ElementHighlightOverlay(
     elements: List<UIElement>,
@@ -1238,49 +618,7 @@ fun ElementInfoPanel(
     }
 } 
 
-@Composable
-fun ExportPackageItem(
-    packageInfo: com.ai.assistance.operit.core.tools.automatic.config.AutomationPackageInfo,
-    onExport: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = packageInfo.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = packageInfo.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            OutlinedButton(onClick = onExport) {
-                Icon(
-                    Icons.Default.Remove,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("导出")
-            }
-        }
-    }
-} 
+ 
 
 
 // 编辑相关组件
@@ -1346,29 +684,4 @@ fun CreatePackageDialog(
 }
 
 
-fun getSelectorTypeName(selector: UISelector?): String {
-    return when (selector) {
-        is UISelector.ByResourceId -> "ByResourceId"
-        is UISelector.ByText -> "ByText"
-        is UISelector.ByContentDesc -> "ByContentDesc"
-        is UISelector.ByClassName -> "ByClassName"
-        is UISelector.ByBounds -> "ByBounds"
-        is UISelector.ByXPath -> "ByXPath"
-        is UISelector.Compound -> "Compound"
-        else -> "Unknown"
-    }
-}
-
-fun getSelectorValue(selector: UISelector?): String {
-    return when (selector) {
-        is UISelector.ByResourceId -> selector.id
-        is UISelector.ByText -> selector.text
-        is UISelector.ByContentDesc -> selector.desc
-        is UISelector.ByClassName -> selector.name
-        is UISelector.ByBounds -> selector.bounds
-        is UISelector.ByXPath -> selector.xpath
-        is UISelector.Compound -> "..."
-        else -> ""
-    }
-}
 
