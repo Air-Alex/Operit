@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -27,7 +28,6 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.DisposableEffect
@@ -647,7 +647,7 @@ private fun AttachmentsList(floatContext: FloatContext) {
 @Composable
 private fun ColumnScope.InputTextField(
     floatContext: FloatContext,
-    viewModel: FloatingChatWindowModeViewModel
+    _viewModel: FloatingChatWindowModeViewModel
 ) {
     val focusRequester = remember { FocusRequester() }
 
@@ -685,7 +685,7 @@ private fun ColumnScope.InputTextField(
             maxLines = Int.MAX_VALUE,
             keyboardOptions = KeyboardOptions(
                 imeAction = ImeAction.Send,
-                autoCorrect = true
+                autoCorrectEnabled = true
             ),
             keyboardActions = KeyboardActions(
                 onSend = {
@@ -738,7 +738,7 @@ private fun ColumnScope.InputTextField(
                 MaterialTheme.colorScheme.primary
         ) {
             Icon(
-                imageVector = if (isProcessing) Icons.Default.Close else Icons.Default.Send,
+                imageVector = if (isProcessing) Icons.Default.Close else Icons.AutoMirrored.Filled.Send,
                 contentDescription = if (isProcessing) "取消" else "发送",
                 tint = if (isProcessing)
                     MaterialTheme.colorScheme.onError

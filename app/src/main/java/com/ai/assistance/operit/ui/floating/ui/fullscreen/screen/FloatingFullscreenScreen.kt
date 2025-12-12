@@ -167,6 +167,7 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
                             .align(Alignment.Center)
                             .offset(y = 80.dp)
                             .fillMaxWidth()
+                            .padding(top = 240.dp, bottom = 120.dp) // Timon: 依照顶部和底部组件距离估算
                             .padding(horizontal = 32.dp)
                     }
 

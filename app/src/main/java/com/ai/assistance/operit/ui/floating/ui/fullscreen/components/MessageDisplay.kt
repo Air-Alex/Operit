@@ -47,8 +47,8 @@ fun MessageDisplay(
             item {
                 Text(
                     text = aiMessage,
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge, // Timon: 字太大了，调小一些
+                    textAlign = TextAlign.Start,
                     color = Color.White,
                     modifier = Modifier.animateContentSize()
                 )
