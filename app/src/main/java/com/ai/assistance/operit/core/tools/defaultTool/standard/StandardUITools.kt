@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -533,8 +535,12 @@ open class StandardUITools(protected val context: Context) {
 
             val floatingService = FloatingChatService.getInstance()
             try {
-                // Temporarily hide the floating status indicator from screenshots
-                floatingService?.setStatusIndicatorAlpha(0f)
+                // Temporarily hide the floating status indicator from screenshots (on main thread)
+                withContext(Dispatchers.Main) {
+                    floatingService?.setStatusIndicatorAlpha(0f)
+                }
+                // Give the system a brief moment to commit the alpha change to the compositor
+                delay(50)
                 val command = "screencap -p ${file.absolutePath}"
                 val result = AndroidShellExecutor.executeShellCommand(command)
                 if (!result.success) {
@@ -550,7 +556,9 @@ open class StandardUITools(protected val context: Context) {
                     "<link type=\"image\" id=\"$imageId\"></link>"
                 }
             } finally {
-                floatingService?.setStatusIndicatorAlpha(1f)
+                withContext(Dispatchers.Main) {
+                    floatingService?.setStatusIndicatorAlpha(1f)
+                }
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "captureScreenshotForAgent failed", e)
