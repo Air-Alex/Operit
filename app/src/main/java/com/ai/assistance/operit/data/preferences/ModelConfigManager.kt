@@ -213,10 +213,7 @@ class ModelConfigManager(private val context: Context) {
         val configId = UUID.randomUUID().toString()
         val configList = configListFlow.first().toMutableList()
 
-        // 复制当前活跃配置作为新配置的基础
-        val baseConfig = getModelConfigFlow(DEFAULT_CONFIG_ID).first()
-
-        val newConfig = baseConfig.copy(id = configId, name = name)
+        val newConfig = ModelConfigData(id = configId, name = name)
 
         // 保存新配置
         saveConfigToDataStore(newConfig)

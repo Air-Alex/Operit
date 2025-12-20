@@ -192,7 +192,8 @@ class MessageCoordinationDelegate(
             maxTokens = (apiConfigDelegate.contextLength.value * 1024).toInt(),
             tokenUsageThreshold = apiConfigDelegate.summaryTokenThreshold.value.toDouble(),
             replyToMessage = getReplyToMessage(),
-            isAutoContinuation = isAutoContinuation
+            isAutoContinuation = isAutoContinuation,
+            enableSummary = apiConfigDelegate.enableSummary.value
         )
 
         // 在sendMessageInternal中，添加对nonFatalErrorEvent的收集

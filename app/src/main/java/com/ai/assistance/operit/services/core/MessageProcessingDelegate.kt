@@ -119,7 +119,8 @@ class MessageProcessingDelegate(
             maxTokens: Int,
             tokenUsageThreshold: Double,
             replyToMessage: ChatMessage? = null, // 新增回复消息参数
-            isAutoContinuation: Boolean = false // 标识是否为自动续写
+            isAutoContinuation: Boolean = false, // 标识是否为自动续写
+            enableSummary: Boolean = true
     ) {
         if (_userMessage.value.text.isBlank() && attachments.isEmpty() && !isAutoContinuation) return
         // 若当前存在其它会话的流式任务，允许“抢占”：取消正在进行的会话并继续发送当前会话的消息
@@ -248,6 +249,11 @@ class MessageProcessingDelegate(
 
                 val chatHistory = getChatHistory()
 
+                // 根据enableSummary控制Token阈值检查和Token超限回调
+                val effectiveMaxTokens = if (enableSummary) maxTokens else 0
+                val effectiveTokenUsageThreshold = if (enableSummary) tokenUsageThreshold else Double.POSITIVE_INFINITY
+                val effectiveOnTokenLimitExceeded = if (enableSummary) onTokenLimitExceeded else null
+
                 // 2. 使用 AIMessageManager 发送消息
                 val responseStream = AIMessageManager.sendMessage(
                     enhancedAiService = service,
@@ -263,14 +269,14 @@ class MessageProcessingDelegate(
                     enableThinking = enableThinking,
                     thinkingGuidance = thinkingGuidance,
                     enableMemoryQuery = enableMemoryQuery, // Pass it here
-                    maxTokens = maxTokens,
-                    tokenUsageThreshold = tokenUsageThreshold,
+                    maxTokens = effectiveMaxTokens,
+                    tokenUsageThreshold = effectiveTokenUsageThreshold,
                     onNonFatalError = { error ->
                         _nonFatalErrorEvent.emit(error)
                     },
+                    onTokenLimitExceeded = effectiveOnTokenLimitExceeded,
                     characterName = characterName,
-                    avatarUri = avatarUri,
-                    onTokenLimitExceeded = onTokenLimitExceeded // 传递回调
+                    avatarUri = avatarUri
                 )
 
                 // 将字符串流共享，以便多个收集器可以使用
