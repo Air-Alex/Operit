@@ -245,6 +245,8 @@ private data class LayoutResult(
     val instructions: List<DrawInstruction>
 )
 
+private const val MAX_CANVAS_HEIGHT_PX = 250_000f
+
 /**
  * 从绘制指令中提取文本内容用于无障碍朗读
  */
@@ -651,6 +653,9 @@ private fun UnifiedCanvasRenderer(
         val accessibleText = remember(layoutResult.instructions) {
             extractAccessibleText(layoutResult.instructions)
         }
+        val clampedHeightDp = with(density) {
+            layoutResult.height.coerceIn(0f, MAX_CANVAS_HEIGHT_PX).toDp()
+        }
         
         // 使用单个 Canvas 绘制所有内容
         Canvas(
@@ -664,7 +669,7 @@ private fun UnifiedCanvasRenderer(
                     Modifier
                 }
             })
-                .height(with(density) { layoutResult.height.toDp() })
+                .height(clampedHeightDp)
                 .semantics {
                     contentDescription = accessibleText
                 }
@@ -1184,11 +1189,14 @@ private fun SingleTextCanvas(
         }
         
         val totalHeight = layout.height.toFloat()
+        val clampedHeightDp = with(density) {
+            totalHeight.coerceIn(0f, MAX_CANVAS_HEIGHT_PX).toDp()
+        }
         
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(with(density) { totalHeight.toDp() })
+                .height(clampedHeightDp)
                 .semantics {
                     contentDescription = text
                 }

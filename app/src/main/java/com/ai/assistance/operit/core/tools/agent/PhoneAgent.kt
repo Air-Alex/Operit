@@ -528,6 +528,11 @@ class ActionHandler(
         val message: String?
     )
 
+    companion object {
+        private const val POST_LAUNCH_DELAY_MS = 1000L
+        private const val POST_NON_WAIT_ACTION_DELAY_MS = 500L
+    }
+
     /**
      * Lightweight context describing whether we should route operations through Shower.
      */
@@ -804,6 +809,7 @@ class ActionHandler(
                         if (created && launched) {
                             // 成功在虚拟屏小窗启动后，切换到 Shower 边框指示并关闭全屏指示
                             useShowerIndicatorForAgent(context)
+                            delay(POST_LAUNCH_DELAY_MS)
                             ok()
                         } else {
                             // 如果目标应用在 Shower 上启动失败或不存在，尝试启动桌面 fallback 应用
@@ -825,6 +831,7 @@ class ActionHandler(
                                 val desktopLaunched = ShowerController.launchApp(desktopPackage)
                                 if (desktopLaunched) {
                                     useShowerIndicatorForAgent(context)
+                                    delay(POST_LAUNCH_DELAY_MS)
                                     ok()
                                 } else {
                                     fail(message = "Failed to launch fallback desktop app on Shower virtual display: $desktopPackage")
@@ -879,6 +886,7 @@ class ActionHandler(
                         val systemTools = ToolGetter.getSystemOperationTools(context)
                         val result = systemTools.startApp(AITool("start_app", listOf(ToolParameter("package_name", packageName))))
                         if (result.success) {
+                            delay(POST_LAUNCH_DELAY_MS)
                             ok()
                         } else {
                             fail(message = result.error ?: "Failed to launch app: $packageName")
@@ -891,7 +899,7 @@ class ActionHandler(
             "Tap" -> {
                 val element = fields["element"] ?: return fail(message = "No element for Tap")
                 val (x, y) = parseRelativePoint(element) ?: return fail(message = "Invalid coordinates for Tap: $element")
-                withAgentUiHiddenForAction(showerCtx) {
+                val exec = withAgentUiHiddenForAction(showerCtx) {
                     if (showerCtx.canUseShowerForInput) {
                         val okTap = ShowerController.tap(x, y)
                         if (okTap) ok() else fail(message = "Shower TAP failed at ($x,$y)")
@@ -906,21 +914,29 @@ class ActionHandler(
                         if (result.success) ok() else fail(message = result.error ?: "Tap failed at ($x,$y)")
                     }
                 }
+                if (exec.success && !exec.shouldFinish) {
+                    delay(POST_NON_WAIT_ACTION_DELAY_MS)
+                }
+                exec
             }
             "Type" -> {
                 val text = fields["text"] ?: ""
-                withAgentUiHiddenForAction(showerCtx) {
+                val exec = withAgentUiHiddenForAction(showerCtx) {
                     val params = withDisplayParam(listOf(ToolParameter("text", text)))
                     val result = toolImplementations.setInputText(AITool("set_input_text", params))
                     if (result.success) ok() else fail(message = result.error ?: "Set input text failed")
                 }
+                if (exec.success && !exec.shouldFinish) {
+                    delay(POST_NON_WAIT_ACTION_DELAY_MS)
+                }
+                exec
             }
             "Swipe" -> {
                 val start = fields["start"] ?: return fail(message = "Missing swipe start")
                 val end = fields["end"] ?: return fail(message = "Missing swipe end")
                 val (sx, sy) = parseRelativePoint(start) ?: return fail(message = "Invalid swipe start: $start")
                 val (ex, ey) = parseRelativePoint(end) ?: return fail(message = "Invalid swipe end: $end")
-                withAgentUiHiddenForAction(showerCtx) {
+                val exec = withAgentUiHiddenForAction(showerCtx) {
                     if (showerCtx.canUseShowerForInput) {
                         val okSwipe = ShowerController.swipe(sx, sy, ex, ey)
                         if (okSwipe) ok() else fail(message = "Shower SWIPE failed")
@@ -937,9 +953,13 @@ class ActionHandler(
                         if (result.success) ok() else fail(message = result.error ?: "Swipe failed")
                     }
                 }
+                if (exec.success && !exec.shouldFinish) {
+                    delay(POST_NON_WAIT_ACTION_DELAY_MS)
+                }
+                exec
             }
             "Back" -> {
-                withAgentUiHiddenForAction(showerCtx) {
+                val exec = withAgentUiHiddenForAction(showerCtx) {
                     if (showerCtx.canUseShowerForInput) {
                         val okKey = ShowerController.key(KeyEvent.KEYCODE_BACK)
                         if (okKey) ok() else fail(message = "Shower BACK key failed")
@@ -949,9 +969,13 @@ class ActionHandler(
                         if (result.success) ok() else fail(message = result.error ?: "Back key failed")
                     }
                 }
+                if (exec.success && !exec.shouldFinish) {
+                    delay(POST_NON_WAIT_ACTION_DELAY_MS)
+                }
+                exec
             }
             "Home" -> {
-                withAgentUiHiddenForAction(showerCtx) {
+                val exec = withAgentUiHiddenForAction(showerCtx) {
                     if (showerCtx.canUseShowerForInput) {
                         val okKey = ShowerController.key(KeyEvent.KEYCODE_HOME)
                         if (okKey) ok() else fail(message = "Shower HOME key failed")
@@ -961,6 +985,10 @@ class ActionHandler(
                         if (result.success) ok() else fail(message = result.error ?: "Home key failed")
                     }
                 }
+                if (exec.success && !exec.shouldFinish) {
+                    delay(POST_NON_WAIT_ACTION_DELAY_MS)
+                }
+                exec
             }
             "Wait" -> {
                 val seconds = fields["duration"]?.replace("seconds", "")?.trim()?.toDoubleOrNull() ?: 1.0
