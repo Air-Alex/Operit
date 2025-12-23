@@ -151,7 +151,7 @@ org.gradle.parallel=true
 
    ```properties
    # 示例:
-   GITHUB_CLIENT_ID="iv1.1234567890abcdef"
+   GITHUB_CLIENT_ID=iv1.1234567890abcdef
    ```
    **注意：** `local.properties` 文件已被 Git 忽略，因此你的个人 ID 不会被提交到仓库中，确保了安全。
 

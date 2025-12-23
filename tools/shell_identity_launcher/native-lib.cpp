@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <grp.h>
 
 // 从 Shizuku 源码简化移植的 SELinux helper
 typedef int getcon_t(char **context);
@@ -150,15 +151,49 @@ int main(int argc, char *argv[]) {
         se::freecon(cur_ctx);
     }
 
-    // 将进程身份从 root 降级为 shell 用户/组 (uid/gid 2000)。
-    // 这与 Shower 端 FakeContext.PACKAGE_NAME = "com.android.shell" 相匹配，
-    // 使得 createVirtualDisplay 这类需要 "packageName 属于 callingUid" 的检查能够通过。
-    if (setgid(2000) != 0) {
-        perror("setgid(2000) failed");
-        // 即使降级失败，也继续尝试后续步骤，让错误信息在日志中可见。
-    }
-    if (setuid(2000) != 0) {
-        perror("setuid(2000) failed");
+    if (uid == 0) {
+        // 在当前 su/Magisk 域下先降级到 shell 的 uid/gid 和补充组，避免在 shell 域中被拒绝 setuid/setgid。
+        const gid_t shell_groups[] = {
+                2000, // shell
+                1004, // input
+                1007, // log
+                1011, // adb
+                1015, // sdcard_rw
+                1028, // sdcard_r
+                3001, // net_bt_admin
+                3002, // net_bt
+                3003, // inet
+                3006, // net_bw_stats
+                3009, // readproc
+                3011  // uhid
+        };
+        if (setgroups(sizeof(shell_groups) / sizeof(shell_groups[0]), shell_groups) != 0) {
+            perror("[operit_shell_exec] setgroups(shell) failed");
+        }
+
+        if (setgid(2000) != 0) {
+            perror("setgid(2000) failed");
+            // 即使降级失败，也继续尝试后续步骤，让错误信息在日志中可见。
+        }
+        if (setuid(2000) != 0) {
+            perror("setuid(2000) failed");
+        }
+
+        // 现在已经是 uid/gid=2000，但仍处于 su/Magisk 的 SELinux 域，
+        // 在该域中尝试切换到 shell 的 SELinux 域。
+        const char *target_ctx = "u:r:shell:s0";
+        if (se::setcon(target_ctx) != 0) {
+            perror("[operit_shell_exec] setcon(u:r:shell:s0) failed");
+        } else {
+            char *after_ctx = nullptr;
+            se::getcon(&after_ctx);
+            if (after_ctx) {
+                fprintf(stderr, "[operit_shell_exec] selinux context (after setcon): %s\n", after_ctx);
+                se::freecon(after_ctx);
+            }
+        }
+    } else {
+        // 以 shell 身份直接启动（uid=2000）时，只尝试记录当前上下文，不修改 uid/gid。
     }
 
     uid_t final_uid = getuid();

@@ -169,6 +169,7 @@ dependencies {
     implementation(project(":dragonbones"))
     implementation(project(":terminal"))
     implementation(project(":mnn"))
+    implementation(project(":showerclient"))
     implementation(libs.androidx.ui.graphics.android)
     implementation(files("libs\\ffmpegkit.jar"))
     implementation(files("libs\\arsc.jar"))

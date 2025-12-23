@@ -35,7 +35,6 @@ public interface IShowerService extends IInterface {
     abstract class Stub extends Binder implements IShowerService {
 
         private static final String DESCRIPTOR = "com.ai.assistance.shower.IShowerService";
-
         static final int TRANSACTION_ensureDisplay = IBinder.FIRST_CALL_TRANSACTION;
         static final int TRANSACTION_destroyDisplay = IBinder.FIRST_CALL_TRANSACTION + 1;
         static final int TRANSACTION_launchApp = IBinder.FIRST_CALL_TRANSACTION + 2;

@@ -1,13 +1,7 @@
 package com.ai.assistance.operit.core.tools.agent
 
 import android.content.Context
-import com.ai.assistance.operit.core.tools.system.AndroidShellExecutor
-import com.ai.assistance.operit.core.tools.system.ShellIdentity
-import com.ai.assistance.operit.util.AppLogger
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
+import com.ai.assistance.showerclient.ShowerServerManager as CoreShowerServerManager
 
 /**
  * Helper to manage the lifecycle of the Shower server (shower-server.jar) on the device.
@@ -18,113 +12,18 @@ import java.io.FileOutputStream
  */
 object ShowerServerManager {
 
-    private const val TAG = "ShowerServerManager"
-    private const val ASSET_JAR_NAME = "shower-server.jar"
-    private const val LOCAL_JAR_NAME = "shower-server.jar"
-
     /**
      * Ensure the Shower server is started in the background.
      * Returns true if the start command was issued successfully.
      */
     suspend fun ensureServerStarted(context: Context): Boolean {
-        // 0) If we already have an alive Binder from the Shizuku-style handoff, just reuse it.
-        if (ShowerBinderRegistry.hasAliveService()) {
-            AppLogger.d(TAG, "Shower Binder already cached and alive, skipping start")
-            return true
-        }
-
-        val appContext = context.applicationContext
-        val jarFile = try {
-            copyJarToExternalDir(appContext)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "Failed to copy shower-server.jar from assets", e)
-            return false
-        }
-
-        // 1) Kill existing server (ignore errors about missing process).
-        // Use '|| true' so that the shell always exits with status 0 even if pkill finds nothing.
-        val killCmd = "pkill -f com.ai.assistance.shower.Main || true"
-        AppLogger.d(TAG, "Stopping existing Shower server (if any) with command: $killCmd")
-        AndroidShellExecutor.executeShellCommand(killCmd)
-
-        // 2) Copy the jar from /sdcard/Download/Operit to /data/local/tmp.
-        val remoteJarPath = "/data/local/tmp/$LOCAL_JAR_NAME"
-        val copyCmd = "cp ${jarFile.absolutePath} $remoteJarPath"
-        AppLogger.d(TAG, "Copying Shower jar with command: $copyCmd")
-        val copyResult = AndroidShellExecutor.executeShellCommand(copyCmd)
-        if (!copyResult.success) {
-            AppLogger.e(
-                TAG,
-                "Failed to copy Shower jar to $remoteJarPath (exitCode=${copyResult.exitCode}). stdout='${copyResult.stdout}', stderr='${copyResult.stderr}'"
-            )
-            return false
-        }
-
-        // 3) Start app_process with CLASSPATH pointing to /data/local/tmp/shower-server.jar, in background.
-        // This single background command should exit quickly with status 0 while the Java process continues.
-        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main &"
-        AppLogger.d(TAG, "Starting Shower server with command: $startCmd")
-        val startResult = AndroidShellExecutor.executeShellCommand(startCmd, ShellIdentity.SHELL)
-        if (!startResult.success) {
-            AppLogger.e(
-                TAG,
-                "Failed to start Shower server (exitCode=${startResult.exitCode}). stdout='${startResult.stdout}', stderr='${startResult.stderr}'"
-            )
-            return false
-        }
-        // Poll for up to 10 seconds for the Binder handoff broadcast to be received and cached.
-        for (attempt in 0 until 50) { // 50 * 200ms = 10s
-            kotlinx.coroutines.delay(200)
-            if (ShowerBinderRegistry.hasAliveService()) {
-                AppLogger.d(
-                    TAG,
-                    "Shower Binder cached and alive after ~${(attempt + 1) * 200}ms"
-                )
-                return true
-            }
-        }
-
-        AppLogger.e(TAG, "Shower Binder was not received within the expected time")
-        return false
+        return CoreShowerServerManager.ensureServerStarted(context)
     }
 
     /**
      * Stop the Shower server process if running.
      */
     suspend fun stopServer(): Boolean {
-        val cmd = "pkill -f com.ai.assistance.shower.Main || true"
-        val result = AndroidShellExecutor.executeShellCommand(cmd)
-        if (!result.success) {
-            AppLogger.e(TAG, "Failed to stop Shower server: ${result.stderr}")
-        }
-        return result.success
+        return CoreShowerServerManager.stopServer()
     }
-
-    /**
-     * Copy shower-server.jar from assets to the app's files dir.
-     * Always overwrites the existing file to keep it in sync with the packaged asset.
-     */
-    private suspend fun copyJarToExternalDir(context: Context): File = withContext(Dispatchers.IO) {
-        // Reuse the same base directory as screenshots: /sdcard/Download/Operit
-        val baseDir = File("/sdcard/Download/Operit")
-        if (!baseDir.exists()) {
-            baseDir.mkdirs()
-        }
-        val outFile = File(baseDir, LOCAL_JAR_NAME)
-        context.assets.open(ASSET_JAR_NAME).use { input ->
-            FileOutputStream(outFile).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    output.write(buffer, 0, read)
-                }
-                output.flush()
-            }
-        }
-        AppLogger.d(TAG, "Copied $ASSET_JAR_NAME to ${outFile.absolutePath}")
-        outFile
-    }
-
-    // Binder registration is now handled via a Shizuku-style broadcast handoff.
 }

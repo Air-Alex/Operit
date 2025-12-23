@@ -45,6 +45,8 @@ import com.ai.assistance.operit.util.WaifuMessageProcessor
 import com.ai.assistance.operit.core.tools.agent.ShowerController
 import com.ai.assistance.operit.ui.common.displays.VirtualDisplayOverlay
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.ai.assistance.operit.core.tools.system.shower.OperitShowerShellRunner
+import com.ai.assistance.showerclient.ShowerEnvironment
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -156,6 +158,10 @@ class OperitApplication : Application(), ImageLoaderFactory, WorkConfiguration.P
         // 初始化AndroidShellExecutor上下文
         AndroidShellExecutor.setContext(applicationContext)
         AppLogger.d(TAG, "【启动计时】AndroidShellExecutor初始化完成 - ${System.currentTimeMillis() - startTime}ms")
+
+        // 初始化 Shower 虚拟屏客户端的 ShellRunner 环境
+        ShowerEnvironment.shellRunner = OperitShowerShellRunner
+        AppLogger.d(TAG, "【启动计时】ShowerEnvironment.shellRunner 已配置 - ${System.currentTimeMillis() - startTime}ms")
 
         // 初始化PDFBox资源加载器
         PDFBoxResourceLoader.init(getApplicationContext());

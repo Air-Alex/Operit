@@ -1,16 +1,6 @@
 package com.ai.assistance.operit.core.tools.agent
 
 import android.content.Context
-import android.os.IBinder
-import com.ai.assistance.operit.util.AppLogger
-import com.ai.assistance.operit.core.tools.agent.ShowerServerManager
-import com.ai.assistance.shower.IShowerService
-import com.ai.assistance.shower.IShowerVideoSink
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.delay
-import kotlin.collections.ArrayDeque
 
 /**
  * Lightweight controller to talk to the Shower server running locally on the device.
@@ -24,255 +14,50 @@ import kotlin.collections.ArrayDeque
  */
 object ShowerController {
 
-    private const val TAG = "ShowerController"
-    private const val SERVICE_NAME = "ai.assistance.shower"
+    private val core get() = com.ai.assistance.showerclient.ShowerController
 
-    @Volatile
-    private var binderService: IShowerService? = null
+    fun getDisplayId(): Int? = core.getDisplayId()
 
-    @Volatile
-    private var virtualDisplayId: Int? = null
+    fun getVideoSize(): Pair<Int, Int>? = core.getVideoSize()
 
-    fun getDisplayId(): Int? = virtualDisplayId
+    fun setBinaryHandler(handler: ((ByteArray) -> Unit)?) = core.setBinaryHandler(handler)
 
-    @Volatile
-    private var videoWidth: Int = 0
+    suspend fun requestScreenshot(timeoutMs: Long = 3000L): ByteArray? =
+        core.requestScreenshot(timeoutMs)
 
-    @Volatile
-    private var videoHeight: Int = 0
+    suspend fun ensureDisplay(
+        context: Context,
+        width: Int,
+        height: Int,
+        dpi: Int,
+        bitrateKbps: Int? = null,
+    ): Boolean = core.ensureDisplay(context, width, height, dpi, bitrateKbps)
 
-    fun getVideoSize(): Pair<Int, Int>? = if (videoWidth > 0 && videoHeight > 0) Pair(videoWidth, videoHeight) else null
+    suspend fun launchApp(packageName: String): Boolean =
+        core.launchApp(packageName)
 
-    private val binaryLock = Any()
-    private val earlyBinaryFrames = ArrayDeque<ByteArray>()
+    suspend fun tap(x: Int, y: Int): Boolean =
+        core.tap(x, y)
 
-    @Volatile
-    private var binaryHandler: ((ByteArray) -> Unit)? = null
+    suspend fun swipe(
+        startX: Int,
+        startY: Int,
+        endX: Int,
+        endY: Int,
+        durationMs: Long = 300L,
+    ): Boolean = core.swipe(startX, startY, endX, endY, durationMs)
 
-    fun setBinaryHandler(handler: ((ByteArray) -> Unit)?) {
-        val framesToReplay: List<ByteArray>
-        synchronized(binaryLock) {
-            binaryHandler = handler
-            AppLogger.d(TAG, "setBinaryHandler: handlerSet=${handler != null}, bufferedFrames=${earlyBinaryFrames.size}")
-            framesToReplay = if (handler != null && earlyBinaryFrames.isNotEmpty()) {
-                val list = earlyBinaryFrames.toList()
-                earlyBinaryFrames.clear()
-                list
-            } else {
-                emptyList()
-            }
-        }
-        if (handler != null && framesToReplay.isNotEmpty()) {
-            AppLogger.d(TAG, "setBinaryHandler: replaying ${framesToReplay.size} buffered frames")
-            framesToReplay.forEach { frame ->
-                try {
-                    handler(frame)
-                } catch (_: Exception) {
-                }
-            }
-        }
-    }
+    suspend fun touchDown(x: Int, y: Int): Boolean =
+        core.touchDown(x, y)
 
-    private val videoSink = object : IShowerVideoSink.Stub() {
-        override fun onVideoFrame(data: ByteArray) {
-            val handler: ((ByteArray) -> Unit)?
-            synchronized(binaryLock) {
-                handler = binaryHandler
-                if (handler == null) {
-                    if (earlyBinaryFrames.size >= 120) {
-                        earlyBinaryFrames.removeFirst()
-                    }
-                    earlyBinaryFrames.addLast(data)
-                }
-            }
-            handler?.invoke(data)
-        }
-    }
+    suspend fun touchMove(x: Int, y: Int): Boolean =
+        core.touchMove(x, y)
 
-    private suspend fun ensureConnected(restartContext: Context? = null): Boolean = withContext(Dispatchers.IO) {
-        if (binderService?.asBinder()?.isBinderAlive == true) {
-            return@withContext true
-        }
+    suspend fun touchUp(x: Int, y: Int): Boolean =
+        core.touchUp(x, y)
 
-        fun clearDeadService() {
-            binderService = null
-            ShowerBinderRegistry.setService(null)
-        }
+    fun shutdown() = core.shutdown()
 
-        val maxAttempts = if (restartContext != null) 2 else 1
-        var attempt = 0
-        while (attempt < maxAttempts) {
-            attempt++
-            try {
-                val cachedService = ShowerBinderRegistry.getService()
-                val binder = cachedService?.asBinder()
-                val alive = binder?.isBinderAlive == true
-                AppLogger.d(TAG, "ensureConnected: attempt=$attempt cachedService=$cachedService binder=$binder alive=$alive")
-                if (cachedService != null && alive) {
-                    binderService = cachedService
-                    binderService?.setVideoSink(videoSink.asBinder())
-                    AppLogger.d(TAG, "Connected to Shower Binder service on attempt=$attempt")
-                    return@withContext true
-                } else {
-                    AppLogger.w(TAG, "No alive Shower Binder cached in ShowerBinderRegistry on attempt=$attempt")
-                    clearDeadService()
-                }
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Failed to connect to Binder service $SERVICE_NAME on attempt=$attempt", e)
-                clearDeadService()
-            }
-
-            if (restartContext != null && attempt == 1) {
-                try {
-                    val ctx = restartContext.applicationContext
-                    AppLogger.d(TAG, "ensureConnected: attempting to restart Shower server after connection failure")
-                    val ok = ShowerServerManager.ensureServerStarted(ctx)
-                    if (!ok) {
-                        AppLogger.e(TAG, "ensureConnected: failed to restart Shower server")
-                        break
-                    }
-                } catch (e: Exception) {
-                    AppLogger.e(TAG, "ensureConnected: exception while restarting Shower server", e)
-                    break
-                }
-            }
-        }
-
-        false
-    }
-
-    suspend fun requestScreenshot(timeoutMs: Long = 3000L): ByteArray? = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext null
-        try {
-            withTimeout(timeoutMs) {
-                binderService?.requestScreenshot()
-            }
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "requestScreenshot failed", e)
-            null
-        }
-    }
-
-    suspend fun ensureDisplay(context: Context, width: Int, height: Int, dpi: Int, bitrateKbps: Int? = null): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected(context)) return@withContext false
-        try {
-            // Align size similar to WebSocket version
-            val alignedWidth = width and -8
-            val alignedHeight = height and -8
-            videoWidth = if (alignedWidth > 0) alignedWidth else width
-            videoHeight = if (alignedHeight > 0) alignedHeight else height
-
-            binderService?.destroyDisplay() // Ensure clean state
-            binderService?.ensureDisplay(videoWidth, videoHeight, dpi, bitrateKbps ?: 0)
-            val id = binderService?.getDisplayId() ?: -1
-            if (id < 0) {
-                virtualDisplayId = null
-                AppLogger.e(TAG, "ensureDisplay: server reported invalid displayId=$id")
-                return@withContext false
-            }
-            virtualDisplayId = id
-            AppLogger.d(TAG, "ensureDisplay complete, new displayId=$virtualDisplayId")
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "ensureDisplay failed", e)
-            false
-        }
-    }
-
-    suspend fun launchApp(packageName: String): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected() || packageName.isBlank()) return@withContext false
-        try {
-            binderService?.launchApp(packageName)
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "launchApp failed for $packageName", e)
-            false
-        }
-    }
-
-    suspend fun tap(x: Int, y: Int): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.tap(x.toFloat(), y.toFloat())
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "tap($x, $y) failed", e)
-            false
-        }
-    }
-
-    suspend fun swipe(startX: Int, startY: Int, endX: Int, endY: Int, durationMs: Long = 300L): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.swipe(startX.toFloat(), startY.toFloat(), endX.toFloat(), endY.toFloat(), durationMs)
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "swipe failed", e)
-            false
-        }
-    }
-
-    suspend fun touchDown(x: Int, y: Int): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.touchDown(x.toFloat(), y.toFloat())
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "touchDown($x, $y) failed", e)
-            false
-        }
-    }
-
-    suspend fun touchMove(x: Int, y: Int): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.touchMove(x.toFloat(), y.toFloat())
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "touchMove($x, $y) failed", e)
-            false
-        }
-    }
-
-    suspend fun touchUp(x: Int, y: Int): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.touchUp(x.toFloat(), y.toFloat())
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "touchUp($x, $y) failed", e)
-            false
-        }
-    }
-
-    fun shutdown() {
-        val service = binderService
-        binderService = null
-        virtualDisplayId = null
-        videoWidth = 0
-        videoHeight = 0
-        synchronized(binaryLock) {
-            binaryHandler = null
-            earlyBinaryFrames.clear()
-        }
-        if (service?.asBinder()?.isBinderAlive == true) {
-            try {
-                service.destroyDisplay()
-                service.setVideoSink(null)
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "shutdown: destroyDisplay failed", e)
-            }
-        }
-    }
-
-    suspend fun key(keyCode: Int): Boolean = withContext(Dispatchers.IO) {
-        if (!ensureConnected()) return@withContext false
-        try {
-            binderService?.injectKey(keyCode)
-            true
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "key($keyCode) failed", e)
-            false
-        }
-    }
+    suspend fun key(keyCode: Int): Boolean =
+        core.key(keyCode)
 }

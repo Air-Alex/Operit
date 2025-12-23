@@ -26,8 +26,8 @@ exit /b 1
 :apk_found
 echo [INFO] 使用 APK: %APK_PATH%
 
-rem === 3. 复制到主工程 app/src/main/assets 目录作为 shower-server.jar ===
-set TARGET_ASSETS_DIR=%SCRIPT_DIR%..\app\src\main\assets
+rem === 3. 复制到 showerclient/src/main/assets 目录作为 shower-server.jar ===
+set TARGET_ASSETS_DIR=%SCRIPT_DIR%..\showerclient\src\main\assets
 if not exist "%TARGET_ASSETS_DIR%" (
     mkdir "%TARGET_ASSETS_DIR%"
 )
