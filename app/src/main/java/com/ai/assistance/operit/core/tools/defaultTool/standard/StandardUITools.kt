@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjection
 import com.ai.assistance.operit.api.chat.EnhancedAIService
 import com.ai.assistance.operit.api.chat.llmprovider.ImageLinkParser
 import com.ai.assistance.operit.core.config.FunctionalPrompts
@@ -12,9 +13,11 @@ import com.ai.assistance.operit.core.tools.SimplifiedUINode
 import com.ai.assistance.operit.core.tools.StringResultData
 import com.ai.assistance.operit.core.tools.UIPageResultData
 import com.ai.assistance.operit.core.tools.AppListData
-import com.ai.assistance.operit.core.tools.agent.VirtualDisplayManager
 import com.ai.assistance.operit.core.tools.defaultTool.ToolGetter
-import com.ai.assistance.operit.core.tools.system.AndroidShellExecutor
+import com.ai.assistance.operit.core.tools.system.MediaProjectionCaptureManager
+import com.ai.assistance.operit.core.tools.system.MediaProjectionHolder
+import com.ai.assistance.operit.core.tools.system.ScreenCaptureActivity
+import kotlinx.coroutines.delay
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.FunctionType
 import com.ai.assistance.operit.data.model.ToolParameter
@@ -296,6 +299,9 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
     // UI操作反馈覆盖层（使用单例避免多窗口叠加）
     protected val operationOverlay = UIOperationOverlay.getInstance(context)
 
+    private var cachedMediaProjection: MediaProjection? = null
+    private var cachedMediaProjectionCaptureManager: MediaProjectionCaptureManager? = null
+
     /** Gets the current UI page/window information */
     open suspend fun getPageInfo(tool: AITool): ToolResult {
             return ToolResult(
@@ -526,7 +532,6 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
 
     protected open suspend fun captureScreenshotToFile(tool: AITool): Pair<String?, Pair<Int, Int>?> {
         return try {
-            // Keep path consistent with automatic_ui_base.* so cleanup logic can be shared.
             val screenshotDir = File("/sdcard/Download/Operit/cleanOnExit")
             if (!screenshotDir.exists()) {
                 screenshotDir.mkdirs()
@@ -535,37 +540,84 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
             val shortName = System.currentTimeMillis().toString().takeLast(4)
             val file = File(screenshotDir, "$shortName.png")
 
-            var usedVirtual = false
+            // 1) Check if we have a valid MediaProjection token
+            if (MediaProjectionHolder.mediaProjection == null) {
+                AppLogger.d(TAG, "captureScreenshotToFile: Requesting MediaProjection permission...")
+                withContext(Dispatchers.Main) {
+                    ScreenCaptureActivity.cleanStart(context)
+                }
+                
+                // Wait for permission (poll for 10 seconds)
+                var retries = 0
+                while (MediaProjectionHolder.mediaProjection == null && retries < 20) {
+                    delay(500)
+                    retries++
+                }
 
-            // 1) 如果存在基于 VirtualDisplayManager 的虚拟显示，优先从中抓帧
+                if (MediaProjectionHolder.mediaProjection == null) {
+                   AppLogger.w(TAG, "captureScreenshotToFile: MediaProjection permission not granted or timed out")
+                   return Pair(null, null)
+                }
+            }
+
+            // 2) Use MediaProjectionCaptureManager
             try {
-                val manager = VirtualDisplayManager.getInstance(context)
-                val id = manager.getDisplayId()
-                if (id != null && manager.captureLatestFrameToFile(file)) {
-                    AppLogger.d(TAG, "captureScreenshotForAgent: captured from legacy virtual display $id via ImageReader")
-                    usedVirtual = true
+                // We create a temporary manager for this capture
+                // In a real app, you might want to keep this alive if you do continuous capture,
+                // but for one-off screenshots, creating/releasing is safer to avoid resource leaks.
+                val projection = MediaProjectionHolder.mediaProjection
+                if (projection != null) {
+                    val manager = if (cachedMediaProjectionCaptureManager == null || cachedMediaProjection !== projection) {
+                        try {
+                            cachedMediaProjectionCaptureManager?.release()
+                        } catch (_: Exception) {
+                        }
+                        cachedMediaProjection = projection
+                        MediaProjectionCaptureManager(context, projection).also {
+                            cachedMediaProjectionCaptureManager = it
+                        }
+                    } else {
+                        cachedMediaProjectionCaptureManager!!
+                    }
+
+                    manager.setupDisplay()
+                    delay(200)
+
+                    var success = false
+                    var attempt = 0
+                    while (!success && attempt < 3) {
+                        success = manager.captureToFile(file)
+                        if (!success) {
+                            delay(120)
+                        }
+                        attempt++
+                    }
+
+                    if (success) {
+                        AppLogger.d(TAG, "captureScreenshotToFile: captured via MediaProjectionCaptureManager")
+                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(file.absolutePath, options)
+                        val dimensions = if (options.outWidth > 0 && options.outHeight > 0) {
+                            Pair(options.outWidth, options.outHeight)
+                        } else {
+                            null
+                        }
+                        return Pair(file.absolutePath, dimensions)
+                    } else {
+                        AppLogger.w(TAG, "captureScreenshotToFile: MediaProjectionCaptureManager capture failed")
+                    }
                 }
             } catch (e: Exception) {
-                AppLogger.e(TAG, "captureScreenshotForAgent: error capturing from legacy virtual display", e)
-            }
-
-            // 2) 仍未成功，则回退到主屏 screencap
-            if (!usedVirtual) {
-                val result = AndroidShellExecutor.executeShellCommand("screencap -p ${file.absolutePath}")
-                if (!result.success) {
-                    AppLogger.w(TAG, "captureScreenshotForAgent: screencap failed: ${result.stderr}")
-                    return Pair(null, null)
+                AppLogger.e(TAG, "captureScreenshotToFile: Error using MediaProjectionCaptureManager", e)
+                try {
+                    cachedMediaProjectionCaptureManager?.release()
+                } catch (_: Exception) {
                 }
+                cachedMediaProjectionCaptureManager = null
+                cachedMediaProjection = null
             }
 
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.absolutePath, options)
-            val dimensions = if (options.outWidth > 0 && options.outHeight > 0) {
-                Pair(options.outWidth, options.outHeight)
-            } else {
-                null
-            }
-            Pair(file.absolutePath, dimensions)
+            Pair(null, null)
         } catch (e: Exception) {
             AppLogger.e(TAG, "captureScreenshotToFile failed", e)
             Pair(null, null)

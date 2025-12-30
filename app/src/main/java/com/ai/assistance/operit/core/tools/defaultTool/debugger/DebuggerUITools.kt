@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.BitmapFactory
+import java.io.File
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.core.tools.SimplifiedUINode
 import com.ai.assistance.operit.core.tools.StringResultData
@@ -480,8 +482,43 @@ open class DebuggerUITools(context: Context) : AccessibilityUITools(context) {
         }
     }
 
+    override suspend fun captureScreenshotToFile(tool: AITool): Pair<String?, Pair<Int, Int>?> {
+        return try {
+            val screenshotDir = File("/sdcard/Download/Operit/cleanOnExit")
+            if (!screenshotDir.exists()) {
+                screenshotDir.mkdirs()
+            }
+
+            val shortName = System.currentTimeMillis().toString().takeLast(4)
+            val file = File(screenshotDir, "$shortName.png")
+
+            // 1) Debugger 模式下优先尝试 Shell 模式 (ADB) 截图
+            AppLogger.d(TAG, "captureScreenshotToFile: Attempting shell screencap")
+            val command = "screencap -p ${file.absolutePath}"
+            val result = AndroidShellExecutor.executeShellCommand(command)
+
+            if (result.success && file.exists()) {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, options)
+                val dimensions = if (options.outWidth > 0 && options.outHeight > 0) {
+                    Pair(options.outWidth, options.outHeight)
+                } else {
+                    null
+                }
+                AppLogger.d(TAG, "captureScreenshotToFile: Shell screencap success")
+                return Pair(file.absolutePath, dimensions)
+            }
+
+            // 2) 如果 Shell 失败，作为回退尝试无障碍截图 (调用父类)
+            AppLogger.w(TAG, "captureScreenshotToFile: Shell screencap failed, falling back to accessibility")
+            super.captureScreenshotToFile(tool)
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "captureScreenshotToFile failed in Debugger", e)
+            Pair(null, null)
+        }
+    }
+
     override suspend fun captureScreenshot(tool: AITool): Pair<String?, Pair<Int, Int>?> {
-        // For debugger/ADB-level tools, reuse the standard shell-based screenshot implementation.
         return captureScreenshotToFile(tool)
     }
 
