@@ -648,9 +648,10 @@ class ClaudeProvider(
     // 创建请求
     private suspend fun createRequest(requestBody: RequestBody): Request {
         val currentApiKey = apiKeyProvider.getApiKey()
+        val completedEndpoint = EndpointCompleter.completeEndpoint(apiEndpoint, providerType)
         val builder =
                 Request.Builder()
-                        .url(apiEndpoint)
+                        .url(completedEndpoint)
                         .post(requestBody)
                         .addHeader("x-api-key", currentApiKey)
                         .addHeader("anthropic-version", ANTHROPIC_VERSION)

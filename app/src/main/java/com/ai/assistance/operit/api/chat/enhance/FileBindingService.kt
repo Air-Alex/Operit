@@ -304,9 +304,19 @@ class FileBindingService(context: Context) {
                     val currentLine = lines[i]
                     val trimmedLine = currentLine.trim()
 
-                    if (trimmedLine.startsWith("[OLD]")) inBlock = "OLD"
-                    else if (trimmedLine.startsWith("[NEW]")) inBlock = "NEW"
-                    else if (trimmedLine.startsWith("[/OLD]")) inBlock = null
+                    if (trimmedLine.startsWith("[OLD]")) {
+                        inBlock = "OLD"
+                        val inline = currentLine.substringAfter("[OLD]", "")
+                        if (inline.isNotEmpty()) {
+                            oldContent += inline + "\n"
+                        }
+                    } else if (trimmedLine.startsWith("[NEW]")) {
+                        inBlock = "NEW"
+                        val inline = currentLine.substringAfter("[NEW]", "")
+                        if (inline.isNotEmpty()) {
+                            newContent += inline + "\n"
+                        }
+                    } else if (trimmedLine.startsWith("[/OLD]")) inBlock = null
                     else if (trimmedLine.startsWith("[/NEW]")) inBlock = null
                     else {
                         when (inBlock) {

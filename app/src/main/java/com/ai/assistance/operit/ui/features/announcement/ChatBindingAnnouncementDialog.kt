@@ -15,8 +15,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun ChatBindingAnnouncementDialog(
-    onNavigateToChatManagement: () -> Unit,
-    onDismiss: () -> Unit,
+    onAcknowledge: () -> Unit,
     countdownSeconds: Int = 5
 ) {
     var remainingSeconds by remember(countdownSeconds) { mutableStateOf(countdownSeconds) }
@@ -35,12 +34,7 @@ fun ChatBindingAnnouncementDialog(
         title = { Text(text = stringResource(id = R.string.chat_binding_announcement_title)) },
         text = { Text(text = stringResource(id = R.string.chat_binding_announcement_body)) },
         confirmButton = {
-            TextButton(onClick = onNavigateToChatManagement) {
-                Text(text = stringResource(id = R.string.chat_binding_announcement_primary_button))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = acknowledgeEnabled) {
+            TextButton(onClick = onAcknowledge, enabled = acknowledgeEnabled) {
                 val label =
                     if (acknowledgeEnabled) {
                         stringResource(id = R.string.chat_binding_announcement_acknowledge)

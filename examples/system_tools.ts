@@ -25,7 +25,7 @@
             "name": "install_app",
             "description": "安装应用程序。需要用户授权。",
             "parameters": [
-                { "name": "apk_path", "description": "APK文件路径", "type": "string", "required": true }
+                { "name": "path", "description": "APK文件路径", "type": "string", "required": true }
             ]
         },
         {

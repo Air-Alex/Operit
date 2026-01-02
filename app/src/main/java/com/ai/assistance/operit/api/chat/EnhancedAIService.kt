@@ -1324,7 +1324,7 @@ class EnhancedAIService private constructor(private val context: Context) {
             val chatModelHasDirectVideo = config.enableDirectVideoProcessing
 
             val categories = if (isEnglish) {
-                SystemToolPrompts.getAllCategoriesEn(
+                SystemToolPrompts.getAIAllCategoriesEn(
                     hasBackendImageRecognition = hasBackendImageRecognition,
                     chatModelHasDirectImage = chatModelHasDirectImage,
                     hasBackendAudioRecognition = hasBackendAudioRecognition,
@@ -1333,7 +1333,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     chatModelHasDirectVideo = chatModelHasDirectVideo
                 )
             } else {
-                SystemToolPrompts.getAllCategoriesCn(
+                SystemToolPrompts.getAIAllCategoriesCn(
                     hasBackendImageRecognition = hasBackendImageRecognition,
                     chatModelHasDirectImage = chatModelHasDirectImage,
                     hasBackendAudioRecognition = hasBackendAudioRecognition,

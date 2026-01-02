@@ -77,6 +77,7 @@ fun ModelApiSettingsSection(
             ApiProviderType.OPENAI -> "gpt-4o"
             ApiProviderType.OPENAI_GENERIC -> ""
             ApiProviderType.ANTHROPIC -> "claude-3-opus-20240229"
+            ApiProviderType.ANTHROPIC_GENERIC -> ""
             ApiProviderType.GOOGLE -> "gemini-2.0-flash"
             ApiProviderType.GEMINI_GENERIC -> "gemini-2.0-flash"
             ApiProviderType.DEEPSEEK -> "deepseek-chat"
@@ -206,6 +207,7 @@ fun ModelApiSettingsSection(
         return when (providerType) {
             ApiProviderType.OPENAI -> "https://api.openai.com/v1/chat/completions"
             ApiProviderType.ANTHROPIC -> "https://api.anthropic.com/v1/messages"
+            ApiProviderType.ANTHROPIC_GENERIC -> ""
             ApiProviderType.GOOGLE -> "https://generativelanguage.googleapis.com/v1beta/models"
             // Gemini通用交给用户自定义端点
             ApiProviderType.GEMINI_GENERIC -> ""
@@ -243,7 +245,7 @@ fun ModelApiSettingsSection(
         AppLogger.d("ModelApiSettingsSection", "API提供商改变")
         if (selectedApiProvider == ApiProviderType.OPENAI || selectedApiProvider == ApiProviderType.OPENAI_GENERIC || selectedApiProvider == ApiProviderType.GOOGLE
             || selectedApiProvider == ApiProviderType.GEMINI_GENERIC
-            || selectedApiProvider == ApiProviderType.ANTHROPIC || selectedApiProvider == ApiProviderType.MISTRAL) {
+            || selectedApiProvider == ApiProviderType.ANTHROPIC || selectedApiProvider == ApiProviderType.ANTHROPIC_GENERIC || selectedApiProvider == ApiProviderType.MISTRAL) {
             val inChina = LocationUtils.isDeviceInMainlandChina(context)
             showRegionWarning = inChina
             if (inChina) {
@@ -260,7 +262,8 @@ fun ModelApiSettingsSection(
         val isGenericProviderForEndpoint =
             selectedApiProvider == ApiProviderType.OPENAI_GENERIC ||
             selectedApiProvider == ApiProviderType.OTHER ||
-            selectedApiProvider == ApiProviderType.GEMINI_GENERIC
+            selectedApiProvider == ApiProviderType.GEMINI_GENERIC ||
+            selectedApiProvider == ApiProviderType.ANTHROPIC_GENERIC
 
         if (isGenericProviderForEndpoint) {
             // 通用供应商仍保留原逻辑：只有在为空或当前就是某个默认端点时才写入默认值
@@ -338,7 +341,8 @@ fun ModelApiSettingsSection(
             val isGenericProvider =
                 selectedApiProvider == ApiProviderType.OPENAI_GENERIC ||
                 selectedApiProvider == ApiProviderType.OTHER ||
-                selectedApiProvider == ApiProviderType.GEMINI_GENERIC
+                selectedApiProvider == ApiProviderType.GEMINI_GENERIC ||
+                selectedApiProvider == ApiProviderType.ANTHROPIC_GENERIC
 
             if (selectedApiProvider == ApiProviderType.MNN) {
                 MnnSettingsBlock(
@@ -367,7 +371,7 @@ fun ModelApiSettingsSection(
                         )
                 )
 
-            val completedEndpoint = EndpointCompleter.completeEndpoint(apiEndpointInput)
+            val completedEndpoint = EndpointCompleter.completeEndpoint(apiEndpointInput, selectedApiProvider)
             if (completedEndpoint != apiEndpointInput) {
                 Text(
                     text = stringResource(R.string.actual_request_url, completedEndpoint),
@@ -912,6 +916,7 @@ private fun getProviderDisplayName(provider: ApiProviderType, context: android.c
         ApiProviderType.OPENAI -> context.getString(R.string.provider_openai)
         ApiProviderType.OPENAI_GENERIC -> context.getString(R.string.provider_openai_generic)
         ApiProviderType.ANTHROPIC -> context.getString(R.string.provider_anthropic)
+        ApiProviderType.ANTHROPIC_GENERIC -> context.getString(R.string.provider_anthropic_generic)
         ApiProviderType.GOOGLE -> context.getString(R.string.provider_google)
         ApiProviderType.GEMINI_GENERIC -> context.getString(R.string.provider_gemini_generic)
         ApiProviderType.BAIDU -> context.getString(R.string.provider_baidu)
@@ -1441,6 +1446,7 @@ private fun getProviderColor(provider: ApiProviderType): androidx.compose.ui.gra
         ApiProviderType.OPENAI -> MaterialTheme.colorScheme.primary
         ApiProviderType.OPENAI_GENERIC -> MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
         ApiProviderType.ANTHROPIC -> MaterialTheme.colorScheme.tertiary
+        ApiProviderType.ANTHROPIC_GENERIC -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
         ApiProviderType.GOOGLE -> MaterialTheme.colorScheme.secondary
         ApiProviderType.GEMINI_GENERIC -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f)
         ApiProviderType.BAIDU -> MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)

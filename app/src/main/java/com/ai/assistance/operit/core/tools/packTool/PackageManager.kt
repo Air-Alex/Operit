@@ -777,6 +777,12 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         return availablePackages[packageName]
     }
 
+    fun getEffectivePackageTools(packageName: String): ToolPackage? {
+        ensureInitialized()
+        val toolPackage = availablePackages[packageName] ?: return null
+        return selectToolPackageState(toolPackage)
+    }
+
     /** Checks if a package is imported */
     fun isPackageImported(packageName: String): Boolean {
         return getImportedPackages().contains(packageName)
@@ -825,6 +831,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         ensureInitialized()
         val toolPackage = availablePackages[packageName] ?: return null
 
+        // Load script based on whether it's built-in or external
         // All tools in a package share the same script, so we can get it from any tool
         return if (toolPackage.tools.isNotEmpty()) {
             toolPackage.tools[0].script

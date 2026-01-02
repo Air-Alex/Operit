@@ -135,7 +135,7 @@ open class DebuggerSystemOperationTools(context: Context) :
     }
 
     override suspend fun installApp(tool: AITool): ToolResult {
-        val apkPath = tool.parameters.find { it.name == "apk_path" }?.value ?: ""
+        val apkPath = tool.parameters.find { it.name == "path" }?.value ?: ""
 
         if (apkPath.isBlank()) {
             return ToolResult(

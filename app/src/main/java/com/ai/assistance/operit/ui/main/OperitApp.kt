@@ -184,6 +184,7 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
                 NavItem.Toolbox,
                 NavItem.ShizukuCommands,
                 // NavItem.Workflow,
+                NavItem.Workflow,
             )
         ),
         NavGroup(
@@ -302,11 +303,7 @@ fun OperitApp(initialNavItem: NavItem = NavItem.AiChat, toolHandler: AIToolHandl
 
         if (showChatBindingAnnouncement) {
             ChatBindingAnnouncementDialog(
-                onNavigateToChatManagement = {
-                    dismissChatBindingAnnouncement()
-                    navigateTo(Screen.AutoGlmOneClick)
-                },
-                onDismiss = { dismissChatBindingAnnouncement() }
+                onAcknowledge = { dismissChatBindingAnnouncement() }
             )
         }
     }

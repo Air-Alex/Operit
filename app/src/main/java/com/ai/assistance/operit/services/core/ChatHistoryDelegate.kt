@@ -262,13 +262,18 @@ class ChatHistoryDelegate(
     }
 
     /** 创建新的聊天 */
-    fun createNewChat(characterCardName: String? = null) {
+    fun createNewChat(
+        characterCardName: String? = null,
+        group: String? = null,
+        inheritGroupFromCurrent: Boolean = true
+    ) {
         coroutineScope.launch {
             val (inputTokens, outputTokens, windowSize) = getChatStatistics()
             saveCurrentChat(inputTokens, outputTokens, windowSize) // 使用获取到的完整统计数据
 
             // 获取当前对话ID，以便继承分组
             val currentChatId = _currentChatId.value
+            val inheritGroupFromChatId = if (inheritGroupFromCurrent) currentChatId else null
             
             // 获取当前活跃的角色卡
             val activeCard = characterCardManager.activeCharacterCardFlow.first()
@@ -278,7 +283,8 @@ class ChatHistoryDelegate(
             
             // 创建新对话，如果有当前对话则继承其分组，并绑定角色卡
             val newChat = chatHistoryManager.createNewChat(
-                inheritGroupFromChatId = currentChatId,
+                group = group,
+                inheritGroupFromChatId = inheritGroupFromChatId,
                 characterCardName = effectiveCharacterCardName
             )
             

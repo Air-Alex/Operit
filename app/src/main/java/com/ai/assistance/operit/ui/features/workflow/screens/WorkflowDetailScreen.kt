@@ -28,20 +28,26 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.core.config.SystemToolPrompts
+import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.data.model.Workflow
 import com.ai.assistance.operit.data.model.WorkflowNode
 import com.ai.assistance.operit.data.model.TriggerNode
 import com.ai.assistance.operit.data.model.ExecuteNode
 import com.ai.assistance.operit.data.model.ParameterValue
+import com.ai.assistance.operit.data.model.ToolParameterSchema
 import com.ai.assistance.operit.ui.components.CustomScaffold
 import com.ai.assistance.operit.ui.features.workflow.viewmodel.WorkflowViewModel
 import com.ai.assistance.operit.ui.features.workflow.components.GridWorkflowCanvas
 import com.ai.assistance.operit.ui.features.workflow.components.ConnectionMenuDialog
 import com.ai.assistance.operit.ui.features.workflow.components.NodeActionMenuDialog
 import com.ai.assistance.operit.ui.features.workflow.components.ScheduleConfigDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -471,6 +477,24 @@ fun NodeDialog(
         mutableStateOf(if (node is ExecuteNode) node.actionType else "")
     }
     var actionTypeExpanded by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val toolHandler = remember(context) { AIToolHandler.getInstance(context) }
+    val packageManager = remember(context) { toolHandler.getOrCreatePackageManager() }
+    val allToolNames = remember(context) {
+        toolHandler.registerDefaultTools()
+        toolHandler.getAllToolNames()
+    }
+    val filteredToolNames = remember(actionType, allToolNames) {
+        val query = actionType.trim()
+        val filtered =
+            if (query.isBlank()) {
+                allToolNames
+            } else {
+                allToolNames.filter { it.contains(query, ignoreCase = true) }
+            }
+        filtered.take(50)
+    }
     
     // 将 actionConfig (Map<String, ParameterValue>) 转换为可变的参数配置列表
     val initialActionConfigPairs = if (node is ExecuteNode) {
@@ -486,6 +510,112 @@ fun NodeDialog(
         emptyList()
     }
     var actionConfigPairs by remember { mutableStateOf(initialActionConfigPairs) }
+
+    var toolDescription by remember { mutableStateOf<String?>(null) }
+    var toolParameterSchemas by remember { mutableStateOf<List<ToolParameterSchema>>(emptyList()) }
+    val toolParameterSchemasByName = remember(toolParameterSchemas) {
+        toolParameterSchemas.associateBy { it.name }
+    }
+
+    LaunchedEffect(actionType, nodeType) {
+        if (nodeType != "execute") {
+            toolDescription = null
+            toolParameterSchemas = emptyList()
+            return@LaunchedEffect
+        }
+
+        val toolName = actionType.trim()
+        if (toolName.isBlank()) {
+            toolDescription = null
+            toolParameterSchemas = emptyList()
+            return@LaunchedEffect
+        }
+
+        var schemas: List<ToolParameterSchema> = emptyList()
+        var description: String? = null
+
+        if (toolName.contains(":")) {
+            val parts = toolName.split(":", limit = 2)
+            if (parts.size == 2) {
+                val packageName = parts[0].trim()
+                val packageToolName = parts[1].trim()
+
+                if (packageName.isNotBlank() && packageToolName.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            if (!packageManager.isPackageImported(packageName)) {
+                                packageManager.importPackage(packageName)
+                            }
+                            packageManager.usePackage(packageName)
+                        } catch (_: Exception) {
+                        }
+                    }
+
+                    val effectivePackage = try {
+                        packageManager.getEffectivePackageTools(packageName)
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val matchedTool = effectivePackage?.tools?.find { it.name == packageToolName }
+                    description = matchedTool?.description
+                    schemas =
+                        matchedTool?.parameters?.map { param ->
+                            ToolParameterSchema(
+                                name = param.name,
+                                type = param.type,
+                                description = param.description,
+                                required = param.required,
+                                default = null
+                            )
+                        }
+                            ?: emptyList()
+                }
+            }
+        } else {
+            val internalTool =
+                SystemToolPrompts.getAllCategoriesCn().flatMap { it.tools }.find { it.name == toolName }
+            description = internalTool?.description
+            schemas = internalTool?.parametersStructured ?: emptyList()
+        }
+
+        toolDescription = description
+        toolParameterSchemas = schemas
+
+        if (schemas.isNotEmpty()) {
+            val existingParams = actionConfigPairs.toList()
+            val existingByKey = existingParams.filter { it.key.isNotBlank() }.associateBy { it.key }
+            val schemaKeys = schemas.map { it.name }.toSet()
+
+            val merged = mutableListOf<ParameterConfig>()
+            schemas.forEach { schema ->
+                val existing = existingByKey[schema.name]
+                val defaultValue =
+                    schema.default
+                        ?.trim()
+                        ?.let { d ->
+                            if (d.length >= 2 && d.startsWith("\"") && d.endsWith("\"")) {
+                                d.substring(1, d.length - 1)
+                            } else {
+                                d
+                            }
+                        }
+                        ?: ""
+
+                merged.add(
+                    ParameterConfig(
+                        key = schema.name,
+                        isReference = existing?.isReference ?: false,
+                        value = existing?.value ?: defaultValue
+                    )
+                )
+            }
+
+            existingParams.filter { it.key.isNotBlank() && !schemaKeys.contains(it.key) }.forEach { merged.add(it) }
+            existingParams.filter { it.key.isBlank() }.forEach { merged.add(it) }
+            actionConfigPairs = merged
+        }
+    }
     
     // 获取可用的前置节点
     val availablePredecessors = if (node != null) {
@@ -610,14 +740,50 @@ fun NodeDialog(
                         )
 
                         // 工具名称输入
+                        ExposedDropdownMenuBox(
+                            expanded = actionTypeExpanded,
+                            onExpandedChange = { actionTypeExpanded = !actionTypeExpanded }
+                        ) {
                             OutlinedTextField(
-                            value = actionType,
-                            onValueChange = { actionType = it },
-                            label = { Text("工具名称") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            placeholder = { Text("例如: execute_shell") }
-                        )
+                                value = actionType,
+                                onValueChange = {
+                                    actionType = it
+                                    actionTypeExpanded = true
+                                },
+                                label = { Text("工具名称") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                singleLine = true,
+                                placeholder = { Text("例如: execute_shell") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(
+                                        expanded = actionTypeExpanded
+                                    )
+                                }
+                            )
+                            ExposedDropdownMenu(
+                                expanded = actionTypeExpanded,
+                                onDismissRequest = { actionTypeExpanded = false },
+                                modifier = Modifier.heightIn(max = 320.dp)
+                            ) {
+                                filteredToolNames.forEach { toolName ->
+                                    DropdownMenuItem(
+                                        text = { Text(toolName) },
+                                        onClick = {
+                                            actionType = toolName
+                                            actionTypeExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        toolDescription?.takeIf { it.isNotBlank() }?.let { desc ->
+                            Text(
+                                text = desc,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
                         // 动态参数配置
                         Spacer(modifier = Modifier.height(12.dp))
@@ -756,6 +922,17 @@ fun NodeDialog(
                                     }) {
                                         Icon(Icons.Default.Delete, contentDescription = "删除参数")
                                     }
+                                }
+
+                                val schema = toolParameterSchemasByName[param.key.trim()]
+                                if (schema != null) {
+                                    val requiredText = if (schema.required) "必需" else "可选"
+                                    val defaultText = schema.default?.let { ", 默认: $it" } ?: ""
+                                    Text(
+                                        text = "${schema.type}（$requiredText）: ${schema.description}$defaultText",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }

@@ -178,7 +178,7 @@ open class StandardSystemOperationTools(private val context: Context) {
 
     /** 安装应用程序 需要APK文件的路径 */
     open suspend fun installApp(tool: AITool): ToolResult {
-        val apkPath = tool.parameters.find { it.name == "apk_path" }?.value ?: ""
+        val apkPath = tool.parameters.find { it.name == "path" }?.value ?: ""
 
         if (apkPath.isBlank()) {
             return ToolResult(

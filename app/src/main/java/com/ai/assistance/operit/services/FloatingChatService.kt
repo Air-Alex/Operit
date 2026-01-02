@@ -37,6 +37,8 @@ import com.ai.assistance.operit.services.floating.FloatingWindowState
 import com.ai.assistance.operit.services.floating.StatusIndicatorStyle
 import com.ai.assistance.operit.ui.floating.FloatingMode
 import android.widget.Toast
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +54,8 @@ class FloatingChatService : Service(), FloatingWindowCallback {
     private val CHANNEL_ID = "floating_chat_channel"
 
     private val PREF_KEY_STATUS_INDICATOR_STYLE = "status_indicator_style"
+    private val PREF_KEY_COLOR_SCHEME = "floating_color_scheme_json"
+    private val PREF_KEY_TYPOGRAPHY = "floating_typography_json"
 
     lateinit var windowState: FloatingWindowState
     private lateinit var windowManager: FloatingWindowManager
@@ -76,6 +80,7 @@ class FloatingChatService : Service(), FloatingWindowCallback {
 
     private val colorScheme = mutableStateOf<ColorScheme?>(null)
     private val typography = mutableStateOf<Typography?>(null)
+    private val gson = Gson()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     companion object {
@@ -337,31 +342,66 @@ class FloatingChatService : Service(), FloatingWindowCallback {
                     updateChatMessages(messages)
                 }
             }
-            if (intent?.hasExtra("COLOR_SCHEME") == true) {
+            val hasColorSchemeExtra = intent?.hasExtra("COLOR_SCHEME") == true
+            if (hasColorSchemeExtra) {
                 val serializableColorScheme =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(
-                                    "COLOR_SCHEME",
-                                    SerializableColorScheme::class.java
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra<SerializableColorScheme>("COLOR_SCHEME")
-                        }
-                serializableColorScheme?.let { colorScheme.value = it.toComposeColorScheme() }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent?.getParcelableExtra(
+                            "COLOR_SCHEME",
+                            SerializableColorScheme::class.java
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent?.getParcelableExtra<SerializableColorScheme>("COLOR_SCHEME")
+                    }
+                serializableColorScheme?.let {
+                    colorScheme.value = it.toComposeColorScheme()
+                    try {
+                        prefs.edit().putString(PREF_KEY_COLOR_SCHEME, gson.toJson(it)).apply()
+                    } catch (_: Exception) {
+                    }
+                }
+            } else {
+                val saved = prefs.getString(PREF_KEY_COLOR_SCHEME, null)
+                if (!saved.isNullOrBlank()) {
+                    try {
+                        val restored = gson.fromJson(saved, SerializableColorScheme::class.java)
+                        colorScheme.value = restored.toComposeColorScheme()
+                    } catch (e: Exception) {
+                        AppLogger.e(TAG, "Failed to restore COLOR_SCHEME", e)
+                    }
+                }
             }
-            if (intent?.hasExtra("TYPOGRAPHY") == true) {
+
+            val hasTypographyExtra = intent?.hasExtra("TYPOGRAPHY") == true
+            if (hasTypographyExtra) {
                 val serializableTypography =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(
-                                    "TYPOGRAPHY",
-                                    SerializableTypography::class.java
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra<SerializableTypography>("TYPOGRAPHY")
-                        }
-                serializableTypography?.let { typography.value = it.toComposeTypography() }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent?.getParcelableExtra(
+                            "TYPOGRAPHY",
+                            SerializableTypography::class.java
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent?.getParcelableExtra<SerializableTypography>("TYPOGRAPHY")
+                    }
+                serializableTypography?.let {
+                    typography.value = it.toComposeTypography()
+                    try {
+                        prefs.edit().putString(PREF_KEY_TYPOGRAPHY, gson.toJson(it)).apply()
+                    } catch (_: Exception) {
+                    }
+                }
+            } else {
+                val saved = prefs.getString(PREF_KEY_TYPOGRAPHY, null)
+                if (!saved.isNullOrBlank()) {
+                    try {
+                        val restored = gson.fromJson(saved, SerializableTypography::class.java)
+                        typography.value = restored.toComposeTypography()
+                    } catch (e: Exception) {
+                        AppLogger.e(TAG, "Failed to restore TYPOGRAPHY", e)
+                    }
+                }
             }
             windowManager.show()
         } catch (e: Exception) {

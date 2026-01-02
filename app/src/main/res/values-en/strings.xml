@@ -2591,6 +2591,7 @@
     <!-- API Provider names -->
     <string name="provider_openai">OpenAI (GPT Series)</string>
     <string name="provider_anthropic">Anthropic (Claude Series)</string>
+    <string name="provider_anthropic_generic">Anthropic (Generic)</string>
     <string name="provider_google">Google (Gemini Series)</string>
     <string name="provider_gemini_generic">Gemini (Generic)</string>
     <string name="provider_baidu">Baidu (ERNIE Series)</string>
@@ -3243,9 +3244,9 @@
     <string name="dialog_button_dismiss">Cancel</string>
     
     <!-- Chat binding announcement -->
-    <string name="chat_binding_announcement_title">AutoGLM One-Click Setup</string>
-    <string name="chat_binding_announcement_body">Model performance has been improved again. You can configure it via Toolbox - AutoGLM One-Click Setup.</string>
-    <string name="chat_binding_announcement_primary_button">Configure Now</string>
+    <string name="chat_binding_announcement_title">Notice</string>
+    <string name="chat_binding_announcement_body">This app is free. If you bought it from someone, you were scammed. Beware of impersonation/reselling.</string>
+    <string name="chat_binding_announcement_primary_button">Got it</string>
     <string name="chat_binding_announcement_acknowledge">Got it</string>
     <string name="chat_binding_announcement_acknowledge_countdown">Got it (%1$ds left)</string>
 

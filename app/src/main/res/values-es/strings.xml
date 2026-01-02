@@ -1192,6 +1192,7 @@
     <!-- API Provider names -->
     <string name="provider_openai">OpenAI (Serie GPT)</string>
     <string name="provider_anthropic">Anthropic (Serie Claude)</string>
+    <string name="provider_anthropic_generic">Anthropic genérico</string>
     <string name="provider_google">Google (Serie Gemini)</string>
     <string name="provider_gemini_generic">Gemini genérico</string>
     <string name="provider_baidu">Baidu (Serie ERNIE)</string>

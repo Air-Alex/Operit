@@ -210,8 +210,16 @@ class ChatServiceCore(
     // ========== 聊天历史相关 ==========
 
     /** 创建新的聊天 */
-    fun createNewChat() {
-        chatHistoryDelegate.createNewChat()
+    fun createNewChat(
+        characterCardName: String? = null,
+        group: String? = null,
+        inheritGroupFromCurrent: Boolean = true
+    ) {
+        chatHistoryDelegate.createNewChat(
+            characterCardName = characterCardName,
+            group = group,
+            inheritGroupFromCurrent = inheritGroupFromCurrent
+        )
     }
 
     /** 切换聊天 */

@@ -106,7 +106,8 @@ object AIServiceFactory {
                 )
 
             // Claude格式，支持Anthropic Claude系列
-            ApiProviderType.ANTHROPIC -> ClaudeProvider(config.apiEndpoint, apiKeyProvider, config.modelName, httpClient, customHeaders, config.apiProviderType, enableToolCall)
+            ApiProviderType.ANTHROPIC,
+            ApiProviderType.ANTHROPIC_GENERIC -> ClaudeProvider(config.apiEndpoint, apiKeyProvider, config.modelName, httpClient, customHeaders, config.apiProviderType, enableToolCall)
 
             // Gemini格式，支持Google Gemini系列及通用Gemini端点
             ApiProviderType.GOOGLE,

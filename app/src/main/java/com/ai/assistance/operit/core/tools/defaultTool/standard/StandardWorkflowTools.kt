@@ -118,7 +118,7 @@ class StandardWorkflowTools(private val context: Context) {
 
             // 解析连接
             val connections = if (!connectionsJson.isNullOrBlank()) {
-                parseConnections(connectionsJson)
+                parseConnections(connectionsJson, nodes)
             } else {
                 emptyList()
             }
@@ -284,7 +284,7 @@ class StandardWorkflowTools(private val context: Context) {
 
             // 解析连接（如果提供了）
             val connections = if (!connectionsJson.isNullOrBlank()) {
-                parseConnections(connectionsJson)
+                parseConnections(connectionsJson, nodes)
             } else {
                 existingWorkflow.connections
             }
@@ -530,15 +530,18 @@ class StandardWorkflowTools(private val context: Context) {
     /**
      * 解析连接JSON字符串
      */
-    private fun parseConnections(connectionsJson: String): List<WorkflowNodeConnection> {
+    private fun parseConnections(connectionsJson: String, nodes: List<WorkflowNode>): List<WorkflowNodeConnection> {
         return try {
             val jsonArray = JSONArray(connectionsJson)
             val connections = mutableListOf<WorkflowNodeConnection>()
+            val nodeIdList = nodes.map { it.id }
+            val nodeIdSet = nodeIdList.toSet()
+            val nodeNameToIds = nodes.groupBy { it.name.trim() }.mapValues { (_, v) -> v.map { it.id } }
 
             for (i in 0 until jsonArray.length()) {
                 val connObj = jsonArray.getJSONObject(i)
-                val connection = parseConnection(connObj)
-                if (connection != null) {
+                val connection = parseConnection(connObj, nodeIdList, nodeIdSet, nodeNameToIds)
+                if (connection != null && connection.sourceNodeId != connection.targetNodeId) {
                     connections.add(connection)
                 }
             }
@@ -553,15 +556,25 @@ class StandardWorkflowTools(private val context: Context) {
     /**
      * 解析单个连接
      */
-    private fun parseConnection(connObj: JSONObject): WorkflowNodeConnection? {
+    private fun parseConnection(
+        connObj: JSONObject,
+        nodeIdList: List<String>,
+        nodeIdSet: Set<String>,
+        nodeNameToIds: Map<String, List<String>>
+    ): WorkflowNodeConnection? {
         return try {
             val id = connObj.optString("id", UUID.randomUUID().toString())
-            val sourceNodeId = connObj.optString("sourceNodeId", "")
-            val targetNodeId = connObj.optString("targetNodeId", "")
+            val sourceNodeId = resolveNodeId(connObj, true, nodeIdList, nodeIdSet, nodeNameToIds)
+            val targetNodeId = resolveNodeId(connObj, false, nodeIdList, nodeIdSet, nodeNameToIds)
             val condition = connObj.optString("condition", null)
 
             if (sourceNodeId.isBlank() || targetNodeId.isBlank()) {
                 AppLogger.w(TAG, "Connection missing source or target node ID")
+                return null
+            }
+
+            if (!nodeIdSet.contains(sourceNodeId) || !nodeIdSet.contains(targetNodeId)) {
+                AppLogger.w(TAG, "Connection references unknown node: $sourceNodeId -> $targetNodeId")
                 return null
             }
 
@@ -575,6 +588,70 @@ class StandardWorkflowTools(private val context: Context) {
             AppLogger.e(TAG, "Failed to parse connection", e)
             null
         }
+    }
+
+    private fun resolveNodeId(
+        connObj: JSONObject,
+        isSource: Boolean,
+        nodeIdList: List<String>,
+        nodeIdSet: Set<String>,
+        nodeNameToIds: Map<String, List<String>>
+    ): String {
+        val idKeys = if (isSource) {
+            listOf("sourceNodeId", "sourceId", "source", "from")
+        } else {
+            listOf("targetNodeId", "targetId", "target", "to")
+        }
+        for (k in idKeys) {
+            val v = connObj.optString(k, "").trim()
+            if (v.isNotBlank() && nodeIdSet.contains(v)) return v
+            // Some LLMs put indices in id fields, e.g. "sourceNodeId": 0 or "0"
+            val idxFromIdField = v.toIntOrNull()
+            if (idxFromIdField != null) {
+                val idByIndex = nodeIdList.getOrNull(idxFromIdField)
+                if (idByIndex != null) return idByIndex
+            }
+        }
+
+        val indexKeys = if (isSource) {
+            listOf("sourceIndex", "sourceNodeIndex", "fromIndex", "from_node_index")
+        } else {
+            listOf("targetIndex", "targetNodeIndex", "toIndex", "to_node_index")
+        }
+        for (k in indexKeys) {
+            if (!connObj.has(k)) continue
+            val idx = when (val raw = connObj.get(k)) {
+                is Number -> raw.toInt()
+                is String -> raw.trim().toIntOrNull()
+                else -> null
+            }
+            if (idx != null) {
+                val idByIndex = nodeIdList.getOrNull(idx)
+                if (idByIndex != null) return idByIndex
+            }
+        }
+
+        val nameKeys = if (isSource) {
+            listOf("sourceNodeName", "sourceName", "fromName", "from_node_name")
+        } else {
+            listOf("targetNodeName", "targetName", "toName", "to_node_name")
+        }
+        for (k in nameKeys) {
+            val name = connObj.optString(k, "").trim()
+            if (name.isBlank()) continue
+            val ids = nodeNameToIds[name]
+            if (ids != null && ids.size == 1) return ids.first()
+            if (ids != null && ids.isNotEmpty()) return ids.first()
+        }
+
+        for (k in idKeys) {
+            val nameOrId = connObj.optString(k, "").trim()
+            if (nameOrId.isBlank()) continue
+            val ids = nodeNameToIds[nameOrId]
+            if (ids != null && ids.isNotEmpty()) return ids.first()
+        }
+
+        return ""
     }
 
     /**

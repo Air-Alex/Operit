@@ -1,5 +1,6 @@
 package com.ai.assistance.operit.api.chat.llmprovider
 
+import com.ai.assistance.operit.data.model.ApiProviderType
 import java.net.URL
 
 /**
@@ -46,4 +47,45 @@ object EndpointCompleter {
         // 如果不符合补全特征，则返回原始输入
         return endpoint
     }
-} 
+
+    fun completeEndpoint(endpoint: String, providerType: ApiProviderType): String {
+        val trimmedEndpoint = endpoint.trim()
+        if (trimmedEndpoint.endsWith("#")) {
+            return trimmedEndpoint.removeSuffix("#")
+        }
+
+        val endpointWithoutSlash = trimmedEndpoint.removeSuffix("/")
+
+        when (providerType) {
+            ApiProviderType.ANTHROPIC,
+            ApiProviderType.ANTHROPIC_GENERIC -> {
+                try {
+                    val url = URL(trimmedEndpoint)
+                    val path = url.path.removeSuffix("/")
+
+                    if (path.isEmpty()) {
+                        return "$endpointWithoutSlash/v1/messages"
+                    }
+
+                    if (path.endsWith("/v1", ignoreCase = true)) {
+                        return "$endpointWithoutSlash/messages"
+                    }
+                } catch (e: Exception) {
+                    // 如果不是一个有效的URL，则不进行任何操作
+                }
+
+                return endpoint
+            }
+
+            ApiProviderType.GOOGLE,
+            ApiProviderType.GEMINI_GENERIC,
+            ApiProviderType.MNN -> {
+                return endpoint
+            }
+
+            else -> {
+                return completeEndpoint(endpoint)
+            }
+        }
+    }
+}

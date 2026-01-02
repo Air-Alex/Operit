@@ -2634,6 +2634,7 @@
     <!-- API Provider names -->
     <string name="provider_openai">OpenAI (GPT系列)</string>
     <string name="provider_anthropic">Anthropic (Claude系列)</string>
+    <string name="provider_anthropic_generic">Anthropic通用</string>
     <string name="provider_google">Google (Gemini系列)</string>
     <string name="provider_gemini_generic">Gemini通用</string>
     <string name="provider_baidu">百度 (文心一言系列)</string>
@@ -3311,9 +3312,9 @@
     <string name="dialog_button_dismiss">取消</string>
     
     <!-- Chat binding announcement -->
-    <string name="chat_binding_announcement_title">AutoGLM 一键配置</string>
-    <string name="chat_binding_announcement_body">版本已再次提升效果，可前往工具箱-AutoGLM一键配置进行配置。</string>
-    <string name="chat_binding_announcement_primary_button">前往一键配置</string>
+    <string name="chat_binding_announcement_title">声明</string>
+    <string name="chat_binding_announcement_body">本软件为免费软件，如果你是从哪里买来的，说明你被坑了。请警惕冒名/倒卖。</string>
+    <string name="chat_binding_announcement_primary_button">我知道了</string>
     <string name="chat_binding_announcement_acknowledge">我知道了</string>
     <string name="chat_binding_announcement_acknowledge_countdown">我知道了（%1$ds后可点击）</string>
 

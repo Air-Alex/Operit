@@ -466,7 +466,14 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
     // 新建对话
     handler.registerTool(
             name = "create_new_chat",
-            descriptionGenerator = { _ -> "创建新的对话" },
+            descriptionGenerator = { tool ->
+                val group = tool.parameters.find { it.name == "group" }?.value
+                if (group.isNullOrBlank()) {
+                    "创建新的对话"
+                } else {
+                    "创建新的对话 (分组: $group)"
+                }
+            },
             executor = { tool -> runBlocking(Dispatchers.IO) { chatManagerTool.createNewChat(tool) } }
     )
 

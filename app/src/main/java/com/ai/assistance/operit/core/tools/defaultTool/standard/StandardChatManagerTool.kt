@@ -13,14 +13,18 @@ import com.ai.assistance.operit.core.tools.ChatServiceStartResultData
 import com.ai.assistance.operit.core.tools.ChatSwitchResultData
 import com.ai.assistance.operit.core.tools.MessageSendResultData
 import com.ai.assistance.operit.data.model.AITool
+import com.ai.assistance.operit.data.model.InputProcessingState
 import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.services.ChatServiceCore
 import com.ai.assistance.operit.services.FloatingChatService
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -31,14 +35,18 @@ class StandardChatManagerTool(private val context: Context) {
 
     companion object {
         private const val TAG = "StandardChatManagerTool"
-        private const val SERVICE_CONNECTION_TIMEOUT = 5000L // 5秒超时
+        private const val SERVICE_CONNECTION_TIMEOUT = 15000L // 15秒超时
+        private const val RESPONSE_STREAM_ACQUIRE_TIMEOUT = 5000L
+        private const val AI_RESPONSE_TIMEOUT = 120000L
     }
+
+    private val appContext = context.applicationContext
 
     // Service 连接状态
     private var chatCore: ChatServiceCore? = null
     private var floatingService: FloatingChatService? = null
     private var isBound = false
-    private var connectionDeferred = CompletableDeferred<Boolean>()
+    private var connectionDeferred = CompletableDeferred<Boolean>().apply { complete(false) }
 
     // Service 连接回调
     private val serviceConnection = object : ServiceConnection {
@@ -49,11 +57,19 @@ class StandardChatManagerTool(private val context: Context) {
                 floatingService = binder.getService()
                 chatCore = binder.getChatCore()
                 isBound = true
-                connectionDeferred.complete(true)
+                binder.setCloseCallback {
+                    AppLogger.d(TAG, "Received close callback from FloatingChatService")
+                    unbindService()
+                }
+                if (!connectionDeferred.isCompleted) {
+                    connectionDeferred.complete(true)
+                }
                 AppLogger.d(TAG, "ChatServiceCore obtained successfully")
             } else {
                 AppLogger.e(TAG, "Failed to cast binder")
-                connectionDeferred.complete(false)
+                if (!connectionDeferred.isCompleted) {
+                    connectionDeferred.complete(false)
+                }
             }
         }
 
@@ -62,6 +78,9 @@ class StandardChatManagerTool(private val context: Context) {
             chatCore = null
             floatingService = null
             isBound = false
+            if (!connectionDeferred.isCompleted) {
+                connectionDeferred.complete(false)
+            }
         }
     }
 
@@ -75,6 +94,15 @@ class StandardChatManagerTool(private val context: Context) {
             return true
         }
 
+        val prefs = appContext.getSharedPreferences("floating_chat_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("service_disabled_due_to_crashes", false)) {
+            AppLogger.w(TAG, "FloatingChatService is disabled due to frequent crashes")
+            if (!connectionDeferred.isCompleted) {
+                connectionDeferred.complete(false)
+            }
+            return false
+        }
+
         // 如果正在连接中，等待连接完成
         if (!connectionDeferred.isCompleted) {
             return try {
@@ -83,6 +111,9 @@ class StandardChatManagerTool(private val context: Context) {
                 }
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Service connection timeout", e)
+                if (!connectionDeferred.isCompleted) {
+                    connectionDeferred.complete(false)
+                }
                 false
             }
         }
@@ -92,24 +123,24 @@ class StandardChatManagerTool(private val context: Context) {
             // 重置 deferred
             connectionDeferred = CompletableDeferred()
             
-            val intent = Intent(context, FloatingChatService::class.java)
-            
-            // 启动服务
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-            
-            // 等待服务启动
-            delay(500)
-            
-            // 绑定服务
-            val bound = context.bindService(
-                intent,
-                serviceConnection,
-                Context.BIND_AUTO_CREATE
-            )
+            val intent = Intent(appContext, FloatingChatService::class.java)
+
+            val bound =
+                withContext(Dispatchers.Main) {
+                    // 启动服务
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        appContext.startForegroundService(intent)
+                    } else {
+                        appContext.startService(intent)
+                    }
+
+                    // 绑定服务
+                    appContext.bindService(
+                        intent,
+                        serviceConnection,
+                        Context.BIND_AUTO_CREATE
+                    )
+                }
             
             if (!bound) {
                 AppLogger.e(TAG, "Failed to bind service")
@@ -134,15 +165,17 @@ class StandardChatManagerTool(private val context: Context) {
     fun unbindService() {
         if (isBound) {
             try {
-                context.unbindService(serviceConnection)
-                isBound = false
-                chatCore = null
-                floatingService = null
-                AppLogger.d(TAG, "Service unbound")
+                appContext.unbindService(serviceConnection)
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Error unbinding service", e)
             }
         }
+
+        isBound = false
+        chatCore = null
+        floatingService = null
+        connectionDeferred = CompletableDeferred<Boolean>().apply { complete(false) }
+        AppLogger.d(TAG, "Service unbound")
     }
 
     /**
@@ -150,9 +183,22 @@ class StandardChatManagerTool(private val context: Context) {
      */
     suspend fun startChatService(tool: AITool): ToolResult {
         return try {
+            val intent = Intent(appContext, FloatingChatService::class.java)
+            withContext(Dispatchers.Main) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    appContext.startForegroundService(intent)
+                } else {
+                    appContext.startService(intent)
+                }
+            }
             val connected = ensureServiceConnected()
             
             if (connected) {
+                try {
+                    floatingService?.setFloatingWindowVisible(true)
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "Failed to set floating window visible", e)
+                }
                 ToolResult(
                     toolName = tool.name,
                     success = true,
@@ -200,20 +246,48 @@ class StandardChatManagerTool(private val context: Context) {
 
             // 获取创建前的 chatId
             val oldChatId = core.currentChatId.value
+
+            val group = tool.parameters.find { it.name == "group" }?.value?.trim()
+            val effectiveGroup = group?.takeIf { it.isNotBlank() }
             
             // 创建新对话
-            core.createNewChat()
-            
-            // 等待 chatId 更新（最多等待2秒）
-            var attempts = 0
-            while (attempts < 20 && core.currentChatId.value == oldChatId) {
-                delay(100)
-                attempts++
+            core.createNewChat(group = effectiveGroup)
+
+            val newChatId = try {
+                withTimeout(5000L) {
+                    var id = core.currentChatId.value
+                    while (id == null || id == oldChatId) {
+                        delay(50)
+                        id = core.currentChatId.value
+                    }
+                    id
+                }
+            } catch (_: TimeoutCancellationException) {
+                null
             }
-            
-            val newChatId = core.currentChatId.value
-            
-            if (newChatId != null && newChatId != oldChatId) {
+
+            if (newChatId != null) {
+                // 等待新对话出现在列表中（尽量保证后续节点能在新对话上下文中运行）
+                try {
+                    withTimeout(2000L) {
+                        core.chatHistories.first { histories ->
+                            histories.any { it.id == newChatId }
+                        }
+                    }
+                } catch (_: TimeoutCancellationException) {
+                }
+
+                // 兜底：如果当前对话ID仍然不是新对话，则强制切换一次
+                if (core.currentChatId.value != newChatId) {
+                    core.switchChat(newChatId)
+                    try {
+                        withTimeout(2000L) {
+                            core.currentChatId.first { it == newChatId }
+                        }
+                    } catch (_: TimeoutCancellationException) {
+                    }
+                }
+
                 ToolResult(
                     toolName = tool.name,
                     success = true,
@@ -437,13 +511,21 @@ class StandardChatManagerTool(private val context: Context) {
                 // 切换到目标对话
                 if (core.currentChatId.value != targetChatId) {
                     core.switchChat(targetChatId)
-                    delay(200) // 等待切换完成
+                    var attempts = 0
+                    while (attempts < 20 && core.currentChatId.value != targetChatId) {
+                        delay(100)
+                        attempts++
+                    }
                 }
             } else {
                 // 如果没有当前对话，创建一个新对话
                 if (core.currentChatId.value == null) {
                     core.createNewChat()
-                    delay(200) // 等待创建完成
+                    var attempts = 0
+                    while (attempts < 20 && core.currentChatId.value == null) {
+                        delay(100)
+                        attempts++
+                    }
                 }
             }
 
@@ -463,12 +545,73 @@ class StandardChatManagerTool(private val context: Context) {
             // 发送消息（包含总结逻辑）
             core.sendUserMessage(PromptFunctionType.CHAT)
 
+            val responseStream = try {
+                var stream = core.getCurrentResponseStream()
+                withTimeout(RESPONSE_STREAM_ACQUIRE_TIMEOUT) {
+                    while (stream == null) {
+                        val state = core.inputProcessingState.value
+                        if (state is InputProcessingState.Error) {
+                            throw IllegalStateException(state.message)
+                        }
+                        delay(50)
+                        stream = core.getCurrentResponseStream()
+                    }
+                }
+                stream
+            } catch (e: TimeoutCancellationException) {
+                null
+            }
+
+            if (responseStream == null) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = MessageSendResultData(chatId = currentChatId, message = message),
+                    error = "未能获取AI响应流"
+                )
+            }
+
+            val aiResponse = try {
+                withTimeout(AI_RESPONSE_TIMEOUT) {
+                    val sb = StringBuilder()
+                    responseStream.collect { chunk ->
+                        sb.append(chunk)
+                    }
+                    sb.toString()
+                }
+            } catch (e: TimeoutCancellationException) {
+                runCatching { core.cancelCurrentMessage() }
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = MessageSendResultData(chatId = currentChatId, message = message),
+                    error = "等待AI回复超时"
+                )
+            }
+
+            val finalState = core.inputProcessingState.value
+            if (finalState is InputProcessingState.Error) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = MessageSendResultData(
+                        chatId = currentChatId,
+                        message = message,
+                        aiResponse = aiResponse,
+                        receivedAt = System.currentTimeMillis()
+                    ),
+                    error = finalState.message
+                )
+            }
+
             ToolResult(
                 toolName = tool.name,
                 success = true,
                 result = MessageSendResultData(
                     chatId = currentChatId,
-                    message = message
+                    message = message,
+                    aiResponse = aiResponse,
+                    receivedAt = System.currentTimeMillis()
                 )
             )
         } catch (e: Exception) {

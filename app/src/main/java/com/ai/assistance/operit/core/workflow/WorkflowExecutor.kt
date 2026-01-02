@@ -55,6 +55,30 @@ class WorkflowExecutor(private val context: Context) {
     companion object {
         private const val TAG = "WorkflowExecutor"
     }
+
+    private fun getReachableNodeIds(
+        startNodeIds: List<String>,
+        adjacencyList: Map<String, List<String>>
+    ): Set<String> {
+        val visited = mutableSetOf<String>()
+        val queue: ArrayDeque<String> = ArrayDeque()
+        for (id in startNodeIds) {
+            if (visited.add(id)) {
+                queue.addLast(id)
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            for (next in adjacencyList[current].orEmpty()) {
+                if (visited.add(next)) {
+                    queue.addLast(next)
+                }
+            }
+        }
+
+        return visited
+    }
     
     /**
      * 执行工作流
@@ -268,17 +292,41 @@ class WorkflowExecutor(private val context: Context) {
         nodeResults: MutableMap<String, NodeExecutionState>,
         onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit
     ): Boolean {
+        val reachableNodeIds = getReachableNodeIds(startNodeIds, dependencyGraph.adjacencyList)
+        val triggerNodeIds = workflow.nodes.filterIsInstance<TriggerNode>().map { it.id }.toSet()
         val queue: Queue<String> = LinkedList()
-        val currentInDegree = dependencyGraph.inDegree.toMutableMap()
-        
-        // 将所有起始节点（触发节点）加入队列
-        for (startNodeId in startNodeIds) {
-            // 将起始节点的后继节点加入队列（如果入度为0）
-            for (nextNodeId in dependencyGraph.adjacencyList[startNodeId] ?: emptyList()) {
-                currentInDegree[nextNodeId] = (currentInDegree[nextNodeId] ?: 0) - 1
-                if (currentInDegree[nextNodeId] == 0) {
-                    queue.offer(nextNodeId)
+        val currentInDegree = mutableMapOf<String, Int>()
+
+        // 仅在“可达子图”内计算入度；并且 **忽略所有触发节点** 的依赖边（触发语义应为 OR，而非 AND）
+        for (nodeId in reachableNodeIds) {
+            if (triggerNodeIds.contains(nodeId)) {
+                continue
+            }
+            currentInDegree[nodeId] = 0
+        }
+
+        for ((sourceId, targets) in dependencyGraph.adjacencyList) {
+            if (!reachableNodeIds.contains(sourceId)) {
+                continue
+            }
+            if (triggerNodeIds.contains(sourceId)) {
+                continue
+            }
+            for (targetId in targets) {
+                if (!reachableNodeIds.contains(targetId)) {
+                    continue
                 }
+                if (triggerNodeIds.contains(targetId)) {
+                    continue
+                }
+                currentInDegree[targetId] = (currentInDegree[targetId] ?: 0) + 1
+            }
+        }
+
+        // 入度为0的节点加入队列作为执行起点
+        for ((nodeId, inDegree) in currentInDegree) {
+            if (inDegree == 0) {
+                queue.offer(nodeId)
             }
         }
         
@@ -310,7 +358,10 @@ class WorkflowExecutor(private val context: Context) {
             }
             
             // 将后继节点的入度减1，如果入度变为0则加入队列
-            for (nextNodeId in dependencyGraph.adjacencyList[currentNodeId ?: ""] ?: emptyList()) {
+            for (nextNodeId in dependencyGraph.adjacencyList[currentNodeId] ?: emptyList()) {
+                if (!currentInDegree.containsKey(nextNodeId)) {
+                    continue
+                }
                 currentInDegree[nextNodeId] = (currentInDegree[nextNodeId] ?: 0) - 1
                 if (currentInDegree[nextNodeId] == 0) {
                     queue.offer(nextNodeId)

@@ -787,13 +787,16 @@ object SystemToolPrompts {
         ),
         categoryFooter = "\n注意：记忆库和用户性格档案会在你输出任务完成标志后由独立的系统自动更新。但是，如果需要立即管理记忆或更新用户偏好，请直接使用相应的工具。"
     )
+
+    private val internalToolCategoriesEn: List<SystemToolPromptCategory> = SystemToolPromptsInternal.internalToolCategoriesEn
+    private val internalToolCategoriesCn: List<SystemToolPromptCategory> = SystemToolPromptsInternal.internalToolCategoriesCn
     
     /**
      * 获取所有英文工具分类
      * @param hasBackendImageRecognition 是否配置了后端识图服务（IMAGE_RECOGNITION功能）
      * @param chatModelHasDirectImage 当前聊天模型是否自带识图能力（可直接看图片）
      */
-    fun getAllCategoriesEn(
+    fun getAIAllCategoriesEn(
         hasBackendImageRecognition: Boolean = false,
         chatModelHasDirectImage: Boolean = false,
         hasBackendAudioRecognition: Boolean = false,
@@ -841,13 +844,31 @@ object SystemToolPrompts {
             memoryTools
         )
     }
+
+    fun getAllCategoriesEn(
+        hasBackendImageRecognition: Boolean = false,
+        chatModelHasDirectImage: Boolean = false,
+        hasBackendAudioRecognition: Boolean = false,
+        hasBackendVideoRecognition: Boolean = false,
+        chatModelHasDirectAudio: Boolean = false,
+        chatModelHasDirectVideo: Boolean = false
+    ): List<SystemToolPromptCategory> {
+        return getAIAllCategoriesEn(
+            hasBackendImageRecognition = hasBackendImageRecognition,
+            chatModelHasDirectImage = chatModelHasDirectImage,
+            hasBackendAudioRecognition = hasBackendAudioRecognition,
+            hasBackendVideoRecognition = hasBackendVideoRecognition,
+            chatModelHasDirectAudio = chatModelHasDirectAudio,
+            chatModelHasDirectVideo = chatModelHasDirectVideo
+        ) + internalToolCategoriesEn
+    }
     
     /**
      * 获取所有中文工具分类
      * @param hasBackendImageRecognition 是否配置了后端识图服务（IMAGE_RECOGNITION功能）
      * @param chatModelHasDirectImage 当前聊天模型是否自带识图能力（可直接看图片）
      */
-    fun getAllCategoriesCn(
+    fun getAIAllCategoriesCn(
         hasBackendImageRecognition: Boolean = false,
         chatModelHasDirectImage: Boolean = false,
         hasBackendAudioRecognition: Boolean = false,
@@ -895,6 +916,24 @@ object SystemToolPrompts {
             memoryToolsCn
         )
     }
+
+    fun getAllCategoriesCn(
+        hasBackendImageRecognition: Boolean = false,
+        chatModelHasDirectImage: Boolean = false,
+        hasBackendAudioRecognition: Boolean = false,
+        hasBackendVideoRecognition: Boolean = false,
+        chatModelHasDirectAudio: Boolean = false,
+        chatModelHasDirectVideo: Boolean = false
+    ): List<SystemToolPromptCategory> {
+        return getAIAllCategoriesCn(
+            hasBackendImageRecognition = hasBackendImageRecognition,
+            chatModelHasDirectImage = chatModelHasDirectImage,
+            hasBackendAudioRecognition = hasBackendAudioRecognition,
+            hasBackendVideoRecognition = hasBackendVideoRecognition,
+            chatModelHasDirectAudio = chatModelHasDirectAudio,
+            chatModelHasDirectVideo = chatModelHasDirectVideo
+        ) + internalToolCategoriesCn
+    }
     
     /**
      * 生成完整的工具提示词文本（英文）
@@ -909,7 +948,7 @@ object SystemToolPrompts {
         chatModelHasDirectVideo: Boolean = false
     ): String {
         val categories = if (includeMemoryTools) {
-            getAllCategoriesEn(
+            getAIAllCategoriesEn(
                 hasBackendImageRecognition = hasBackendImageRecognition,
                 chatModelHasDirectImage = chatModelHasDirectImage,
                 hasBackendAudioRecognition = hasBackendAudioRecognition,
@@ -918,7 +957,7 @@ object SystemToolPrompts {
                 chatModelHasDirectVideo = chatModelHasDirectVideo
             )
         } else {
-            getAllCategoriesEn(
+            getAIAllCategoriesEn(
                 hasBackendImageRecognition = hasBackendImageRecognition,
                 chatModelHasDirectImage = chatModelHasDirectImage,
                 hasBackendAudioRecognition = hasBackendAudioRecognition,
@@ -945,7 +984,7 @@ object SystemToolPrompts {
         chatModelHasDirectVideo: Boolean = false
     ): String {
         val categories = if (includeMemoryTools) {
-            getAllCategoriesCn(
+            getAIAllCategoriesCn(
                 hasBackendImageRecognition = hasBackendImageRecognition,
                 chatModelHasDirectImage = chatModelHasDirectImage,
                 hasBackendAudioRecognition = hasBackendAudioRecognition,
@@ -954,7 +993,7 @@ object SystemToolPrompts {
                 chatModelHasDirectVideo = chatModelHasDirectVideo
             )
         } else {
-            getAllCategoriesCn(
+            getAIAllCategoriesCn(
                 hasBackendImageRecognition = hasBackendImageRecognition,
                 chatModelHasDirectImage = chatModelHasDirectImage,
                 hasBackendAudioRecognition = hasBackendAudioRecognition,

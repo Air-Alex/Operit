@@ -8,6 +8,7 @@ enum class ApiProviderType {
         OPENAI, // OpenAI (GPT系列)
         OPENAI_GENERIC, // OpenAI通用（自定义端点）
         ANTHROPIC, // Anthropic (Claude系列)
+        ANTHROPIC_GENERIC, // Anthropic通用（自定义端点）
         GOOGLE, // Google (Gemini系列)
         GEMINI_GENERIC, // Gemini通用（自定义端点）
         BAIDU, // 百度 (文心一言系列)

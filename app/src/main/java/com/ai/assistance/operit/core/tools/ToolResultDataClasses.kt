@@ -1433,6 +1433,8 @@ data class ChatSwitchResultData(
 data class MessageSendResultData(
     val chatId: String,
     val message: String,
+    val aiResponse: String? = null,
+    val receivedAt: Long? = null,
     val sentAt: Long = System.currentTimeMillis()
 ) : ToolResultData() {
     override fun toString(): String {
@@ -1441,7 +1443,17 @@ data class MessageSendResultData(
         } else {
             message
         }
-        return "消息已发送到对话: $chatId\n消息内容: $messagePreview"
+        val response = aiResponse
+        return if (response.isNullOrBlank()) {
+            "消息已发送到对话: $chatId\n消息内容: $messagePreview"
+        } else {
+            val responsePreview = if (response.length > 200) {
+                "${response.take(200)}..."
+            } else {
+                response
+            }
+            "消息已发送到对话: $chatId\n消息内容: $messagePreview\nAI回复: $responsePreview"
+        }
     }
 }
 

@@ -22,6 +22,7 @@ import org.json.JSONObject
 /** 模型列表获取工具，用于从不同API提供商获取可用模型列表 */
 object ModelListFetcher {
     private const val TAG = "ModelListFetcher"
+    private const val ANTHROPIC_VERSION = "2023-06-01"
 
     // 使用更长的超时时间
     private val client =
@@ -45,7 +46,8 @@ object ModelListFetcher {
                 when (apiProviderType) {
                     ApiProviderType.OPENAI,
                     ApiProviderType.OPENAI_GENERIC -> "${extractBaseUrl(apiEndpoint)}/v1/models"
-                    ApiProviderType.ANTHROPIC -> "${extractBaseUrl(apiEndpoint)}/v1/models"
+                    ApiProviderType.ANTHROPIC,
+                    ApiProviderType.ANTHROPIC_GENERIC -> "${extractBaseUrl(apiEndpoint)}/v1/models"
                     ApiProviderType.GOOGLE,
                     ApiProviderType.GEMINI_GENERIC -> {
                         // 对于Gemini API，直接使用提供的端点或默认端点
@@ -145,7 +147,7 @@ object ModelListFetcher {
             while (retryCount <= maxRetries) {
                 try {
                     // 根据提供商类型获取模型列表URL
-                    val modelsUrl = getModelsListUrl(EndpointCompleter.completeEndpoint(apiEndpoint), apiProviderType)
+                    val modelsUrl = getModelsListUrl(EndpointCompleter.completeEndpoint(apiEndpoint, apiProviderType), apiProviderType)
                     AppLogger.d(TAG, "准备发送请求到: $modelsUrl, 尝试次数: ${retryCount + 1}/${maxRetries + 1}")
 
                     val requestBuilder =
@@ -176,6 +178,12 @@ object ModelListFetcher {
                             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
                             requestBuilder.addHeader("HTTP-Referer", "ai.assistance.operit")
                             requestBuilder.addHeader("X-Title", "Assistance App")
+                        }
+                        ApiProviderType.ANTHROPIC,
+                        ApiProviderType.ANTHROPIC_GENERIC -> {
+                            AppLogger.d(TAG, "使用Anthropic x-api-key认证方式")
+                            requestBuilder.addHeader("x-api-key", apiKey)
+                            requestBuilder.addHeader("anthropic-version", ANTHROPIC_VERSION)
                         }
                         else -> {
                             // 大多数API使用Bearer认证
@@ -223,7 +231,8 @@ object ModelListFetcher {
                                     ApiProviderType.ALIPAY_BAILING,
                                     ApiProviderType.LMSTUDIO,
                                     ApiProviderType.PPINFRA -> parseOpenAIModelResponse(responseBody)
-                                    ApiProviderType.ANTHROPIC -> parseAnthropicModelResponse(responseBody)
+                                    ApiProviderType.ANTHROPIC,
+                                    ApiProviderType.ANTHROPIC_GENERIC -> parseAnthropicModelResponse(responseBody)
                                     ApiProviderType.GOOGLE,
                                     ApiProviderType.GEMINI_GENERIC -> parseGoogleModelResponse(responseBody)
 
@@ -317,17 +326,25 @@ object ModelListFetcher {
 
         try {
             val jsonObject = JSONObject(jsonResponse)
-            if (!jsonObject.has("models")) {
-                AppLogger.e(TAG, "Anthropic响应格式错误: 缺少'models'字段")
-                throw JSONException("响应格式错误: 缺少'models'字段")
+            val modelsArray = when {
+                jsonObject.has("data") -> jsonObject.getJSONArray("data")
+                jsonObject.has("models") -> jsonObject.getJSONArray("models")
+                else -> {
+                    AppLogger.e(TAG, "Anthropic响应格式错误: 缺少'data'或'models'字段")
+                    throw JSONException("响应格式错误: 缺少'data'或'models'字段")
+                }
             }
 
-            val modelsArray = jsonObject.getJSONArray("models")
             AppLogger.d(TAG, "解析Anthropic格式响应: 发现 ${modelsArray.length()} 个模型")
 
             for (i in 0 until modelsArray.length()) {
                 val modelObj = modelsArray.getJSONObject(i)
-                val id = modelObj.getString("name")
+
+                val id = when {
+                    modelObj.has("id") -> modelObj.getString("id")
+                    modelObj.has("name") -> modelObj.getString("name")
+                    else -> continue
+                }
                 val displayName = modelObj.optString("display_name", id)
                 modelList.add(ModelOption(id = id, name = displayName))
             }
