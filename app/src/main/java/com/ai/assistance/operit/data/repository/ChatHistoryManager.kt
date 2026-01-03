@@ -2,13 +2,13 @@ package com.ai.assistance.operit.data.repository
 
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
 import com.ai.assistance.operit.util.AppLogger
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.data.backup.OperitBackupDirs
 import com.ai.assistance.operit.data.db.AppDatabase
 import com.ai.assistance.operit.data.model.ChatEntity
 import com.ai.assistance.operit.data.model.ChatHistory
@@ -866,12 +866,7 @@ class ChatHistoryManager private constructor(private val context: Context) {
                     completeHistories.add(completeHistory)
                 }
 
-                val downloadDir =
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val exportDir = File(downloadDir, "Operit")
-                if (!exportDir.exists()) {
-                    exportDir.mkdirs()
-                }
+                val exportDir = OperitBackupDirs.chatDir()
 
                 val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
                 val timestamp = dateFormat.format(Date())

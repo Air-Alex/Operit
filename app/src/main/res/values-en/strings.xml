@@ -1135,7 +1135,11 @@
     <!-- UI Text -->
     <string name="permission_request">Permission Request</string>
     <string name="ai_assistant_requests_operation">AI Assistant requests to perform the following operation</string>
+    <string name="permission_request_allow">Allow</string>
+    <string name="permission_request_deny">Deny</string>
+    <string name="permission_request_always_allow">Always allow</string>
     <string name="permission_change_reminder">* You can change permissions in settings at any time</string>
+    <string name="overlay_permission_grant_hint">Overlay permission is required. Please allow this permission in settings.</string>
     <string name="parameter_details">Parameter Details</string>
     <string name="floating_window_attachment_note">Note: Only special attachments are supported in floating window\nTo add files or images, please open the full chat interface</string>
     <string name="ai_assistant">AI Assistant</string>
@@ -3514,9 +3518,39 @@
     <string name="backup_refresh">Refresh</string>
     <string name="backup_scanning">Scanning</string>
     <string name="backup_chat_files">Chat History</string>
-    <string name="backup_memory_files">Memory Library</string>
-    <string name="backup_model_config_files">Model Configs</string>
-    <string name="backup_files_location_hint">Backup files are saved in Download/Operit folder</string>
+    <string name="backup_memory_files">Memory</string>
+    <string name="backup_model_config_files">Model Config</string>
+    <string name="backup_room_db_files">Database</string>
+    <string name="backup_files_location_hint">Tip: backup files are saved in Download/Operit folder</string>
+
+    <string name="backup_room_db_title">Database (Auto + Manual Backup)</string>
+    <string name="backup_room_db_subtitle">Daily backup of Room SQLite database, keep up to %1$d backups (older ones will be deleted automatically)</string>
+
+    <string name="backup_room_db_enable_daily">Daily auto backup</string>
+    <string name="backup_room_db_enable_daily_desc">Create one backup per day (room_db_backup_YYYY-MM-DD.zip)</string>
+    <string name="backup_room_db_backup_now">Backup now</string>
+    <string name="backup_room_db_restore_from_file">Restore from file</string>
+    <string name="backup_room_db_recent_auto_backups">Recent 3 backups (auto + manual, showing only 3)</string>
+    <string name="backup_room_db_restore_to_day">Restore to: %1$s</string>
+    <string name="backup_room_db_backing_up">Backing up database...</string>
+    <string name="backup_room_db_restoring">Restoring database...</string>
+    <string name="backup_room_db_restore_success">Restore successful</string>
+    <string name="backup_room_db_restore_failed">Restore failed</string>
+    <string name="backup_room_db_backup_type_auto">Auto</string>
+    <string name="backup_room_db_backup_type_manual">Manual</string>
+    <string name="backup_room_db_max_backup_count">Max backups to keep</string>
+    <string name="backup_room_db_max_backup_count_desc">When exceeded, older backups will be deleted automatically (range 1-100)</string>
+    <string name="backup_room_db_low_level_desc">This is a low-level full database backup (Room/SQLite), typically including chat history, messages, and the problem library. Restoring will overwrite the current database; it is recommended to back up first.</string>
+    <string name="backup_room_db_restore_confirm_title">Confirm database restore</string>
+    <string name="backup_room_db_restore_confirm_message">This will overwrite the current database with the following backup:\n%1$s\n\nThis action cannot be undone. It is recommended to perform a backup before restoring.</string>
+    <string name="backup_room_db_restore_confirm_action">Confirm restore</string>
+    <string name="backup_room_db_restore_cancel_action">Cancel</string>
+    <string name="backup_room_db_restart_title">App restart required</string>
+    <string name="backup_room_db_restart_message">Database restored. To avoid issues caused by old database connections, please restart the app now.</string>
+    <string name="backup_room_db_restart_now">Restart now</string>
+    <string name="backup_room_db_restart_later">Later</string>
+    <string name="backup_room_db_last_success">Last successful backup: %1$s</string>
+    <string name="backup_room_db_last_error">Last error: %1$s</string>
     
     <string name="backup_chat_history">Chat History</string>
     <string name="backup_chat_history_subtitle">Cross-format backup, export and recovery</string>

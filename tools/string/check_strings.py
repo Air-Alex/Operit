@@ -35,9 +35,10 @@ def parse_strings_file(filepath):
     return strings_dict, duplicates
 
 def main():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     files = {
-        '中文': 'app/src/main/res/values/strings.xml',
-        '英文': 'app/src/main/res/values-en/strings.xml', 
+        '中文': os.path.join(repo_root, 'app', 'src', 'main', 'res', 'values', 'strings.xml'),
+        '英文': os.path.join(repo_root, 'app', 'src', 'main', 'res', 'values-en', 'strings.xml'), 
         # '西班牙语': 'app/src/main/res/values-es/strings.xml'
     }
     

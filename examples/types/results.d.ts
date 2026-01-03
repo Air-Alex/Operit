@@ -733,10 +733,23 @@ export interface NodePosition {
     y: number;
 }
 
+export interface StaticValue {
+    __type?: string;
+    value: string;
+}
+
+export interface NodeReference {
+    __type?: string;
+    nodeId: string;
+}
+
+export type ParameterValue = string | StaticValue | NodeReference;
+
 /**
  * 触发节点
  */
 export interface TriggerNode {
+    __type?: string;
     /** 节点 ID */
     id: string;
     /** 节点类型 */
@@ -757,6 +770,7 @@ export interface TriggerNode {
  * 执行节点
  */
 export interface ExecuteNode {
+    __type?: string;
     /** 节点 ID */
     id: string;
     /** 节点类型 */
@@ -770,15 +784,67 @@ export interface ExecuteNode {
     /** 动作类型（工具名称） */
     actionType: string;
     /** 动作配置（工具参数） */
-    actionConfig: Record<string, string>;
+    actionConfig: Record<string, string | ParameterValue>;
     /** JavaScript 代码（可选） */
     jsCode?: string | null;
+}
+
+export type ConditionOperator =
+    | 'EQ'
+    | 'NE'
+    | 'GT'
+    | 'GTE'
+    | 'LT'
+    | 'LTE'
+    | 'CONTAINS'
+    | 'NOT_CONTAINS'
+    | 'IN'
+    | 'NOT_IN';
+
+export interface ConditionNode {
+    __type?: string;
+    id: string;
+    type: 'condition';
+    name: string;
+    description: string;
+    position: NodePosition;
+    left: ParameterValue;
+    operator: ConditionOperator;
+    right: ParameterValue;
+}
+
+export type LogicOperator = 'AND' | 'OR';
+
+export interface LogicNode {
+    __type?: string;
+    id: string;
+    type: 'logic';
+    name: string;
+    description: string;
+    position: NodePosition;
+    operator: LogicOperator;
+}
+
+export type ExtractMode = 'REGEX' | 'JSON';
+
+export interface ExtractNode {
+    __type?: string;
+    id: string;
+    type: 'extract';
+    name: string;
+    description: string;
+    position: NodePosition;
+    source: ParameterValue;
+    mode: ExtractMode;
+    expression: string;
+    group: number;
+    defaultValue: string;
 }
 
 /**
  * 工作流节点（联合类型）
  */
-export type WorkflowNode = TriggerNode | ExecuteNode;
+export type WorkflowNode = TriggerNode | ExecuteNode | ConditionNode | LogicNode | ExtractNode;
 
 /**
  * 工作流节点连接

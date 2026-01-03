@@ -284,7 +284,16 @@ class SkillManager private constructor(private val context: Context) {
 
             val (metaName, metaDesc) = parseSkillMetadata(selectedSkillFile)
             val baseName = metaName.ifBlank {
-                selectedSkillDir.name.ifBlank { zipFile.nameWithoutExtension }
+                val isTmpRoot = try {
+                    selectedSkillDir.canonicalFile == tmpDir.canonicalFile
+                } catch (_: Exception) {
+                    selectedSkillDir.absolutePath == tmpDir.absolutePath
+                }
+                if (isTmpRoot) {
+                    zipFile.nameWithoutExtension
+                } else {
+                    selectedSkillDir.name.ifBlank { zipFile.nameWithoutExtension }
+                }
             }
             val finalDir = File(skillsRoot, baseName.trim().ifBlank { "skill" })
 

@@ -30,6 +30,9 @@ import com.ai.assistance.operit.core.workflow.NodeExecutionState
 import com.ai.assistance.operit.data.model.WorkflowNode
 import com.ai.assistance.operit.data.model.TriggerNode
 import com.ai.assistance.operit.data.model.ExecuteNode
+import com.ai.assistance.operit.data.model.ConditionNode
+import com.ai.assistance.operit.data.model.LogicNode
+import com.ai.assistance.operit.data.model.ExtractNode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -75,6 +78,27 @@ fun DraggableNodeCard(
             borderColor = Color(0xFF64B5F6),
             icon = Icons.Default.Settings,
             label = "执行"
+        )
+        is ConditionNode -> NodeStyle(
+            primaryColor = Color(0xFFFF9800),
+            backgroundColor = Color(0xFFFFF3E0),
+            borderColor = Color(0xFFFFB74D),
+            icon = Icons.Default.Settings,
+            label = "条件"
+        )
+        is LogicNode -> NodeStyle(
+            primaryColor = Color(0xFF7E57C2),
+            backgroundColor = Color(0xFFF3E5F5),
+            borderColor = Color(0xFFB39DDB),
+            icon = Icons.Default.Settings,
+            label = "逻辑"
+        )
+        is ExtractNode -> NodeStyle(
+            primaryColor = Color(0xFF009688),
+            backgroundColor = Color(0xFFE0F2F1),
+            borderColor = Color(0xFF4DB6AC),
+            icon = Icons.Default.Settings,
+            label = "提取"
         )
         else -> NodeStyle(
             primaryColor = Color(0xFF9E9E9E),

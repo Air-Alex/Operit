@@ -64,7 +64,9 @@ import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.skill.SkillRepository
 import com.ai.assistance.operit.core.tools.skill.SkillPackage
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SkillManagerScreen(
@@ -384,12 +386,23 @@ fun SkillManagerScreen(
                                             return@launch
                                         }
 
-                                        val inputStream = context.contentResolver.openInputStream(uri)
-                                        val tempFile = File(context.cacheDir, nameToUse)
-                                        inputStream?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+                                        val result = withContext(Dispatchers.IO) {
+                                            val tempFile = File(context.cacheDir, nameToUse)
+                                            try {
+                                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                                    tempFile.outputStream().use { output ->
+                                                        input.copyTo(output)
+                                                    }
+                                                } ?: throw IllegalStateException("无法读取文件")
 
-                                        val result = skillRepository.importSkillFromZip(tempFile)
-                                        tempFile.delete()
+                                                skillRepository.importSkillFromZip(tempFile)
+                                            } finally {
+                                                try {
+                                                    tempFile.delete()
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        }
 
                                         refreshSkills()
                                         snackbarHostState.showSnackbar(result)

@@ -4,7 +4,14 @@ import android.content.Context
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.data.model.AITool
+import com.ai.assistance.operit.data.model.ConditionNode
+import com.ai.assistance.operit.data.model.ConditionOperator
 import com.ai.assistance.operit.data.model.ExecuteNode
+import com.ai.assistance.operit.data.model.ExtractMode
+import com.ai.assistance.operit.data.model.ExtractNode
+import com.ai.assistance.operit.data.model.LogicNode
+import com.ai.assistance.operit.data.model.LogicOperator
+import com.ai.assistance.operit.data.model.ParameterValue
 import com.ai.assistance.operit.data.model.ToolParameter
 import com.ai.assistance.operit.data.model.TriggerNode
 import com.ai.assistance.operit.data.model.Workflow
@@ -54,6 +61,140 @@ class WorkflowExecutor(private val context: Context) {
     
     companion object {
         private const val TAG = "WorkflowExecutor"
+    }
+
+    private fun isSkippedState(state: NodeExecutionState?): Boolean {
+        return state is NodeExecutionState.Success && state.result == "跳过"
+    }
+
+    private fun parseBooleanLike(value: String): Boolean? {
+        val normalized = value.trim().lowercase()
+        return when (normalized) {
+            "true", "1", "yes", "y", "on" -> true
+            "false", "0", "no", "n", "off" -> false
+            else -> null
+        }
+    }
+
+    private fun resolveParameterValue(
+        value: ParameterValue,
+        nodeResults: Map<String, NodeExecutionState>
+    ): String {
+        return when (value) {
+            is ParameterValue.StaticValue -> value.value
+            is ParameterValue.NodeReference -> {
+                val refState = nodeResults[value.nodeId]
+                when (refState) {
+                    is NodeExecutionState.Success -> refState.result
+                    is NodeExecutionState.Failed -> throw IllegalStateException("引用的节点 ${value.nodeId} 执行失败")
+                    else -> throw IllegalStateException("引用的节点 ${value.nodeId} 尚未完成执行")
+                }
+            }
+        }
+    }
+
+    private fun compareValues(leftRaw: String, rightRaw: String, operator: ConditionOperator): Boolean {
+        val left = leftRaw
+        val right = rightRaw
+
+        fun numericCompare(op: (Double, Double) -> Boolean): Boolean? {
+            val a = left.trim().toDoubleOrNull() ?: return null
+            val b = right.trim().toDoubleOrNull() ?: return null
+            return op(a, b)
+        }
+
+        return when (operator) {
+            ConditionOperator.EQ -> left == right
+            ConditionOperator.NE -> left != right
+            ConditionOperator.GT -> numericCompare { a, b -> a > b } ?: (left > right)
+            ConditionOperator.GTE -> numericCompare { a, b -> a >= b } ?: (left >= right)
+            ConditionOperator.LT -> numericCompare { a, b -> a < b } ?: (left < right)
+            ConditionOperator.LTE -> numericCompare { a, b -> a <= b } ?: (left <= right)
+            ConditionOperator.CONTAINS -> left.contains(right)
+            ConditionOperator.NOT_CONTAINS -> !left.contains(right)
+            ConditionOperator.IN, ConditionOperator.NOT_IN -> {
+                val items: List<String> = try {
+                    val arr = org.json.JSONArray(right)
+                    (0 until arr.length()).map { idx -> arr.optString(idx, "") }
+                } catch (_: Exception) {
+                    right.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                }
+                val contains = items.contains(left)
+                if (operator == ConditionOperator.IN) contains else !contains
+            }
+        }
+    }
+
+    private fun extractByRegex(source: String, pattern: String, group: Int, defaultValue: String): String {
+        if (pattern.isBlank()) return defaultValue
+        return try {
+            val match = Regex(pattern).find(source)
+            val groupValue = match?.groups?.get(group)?.value
+            groupValue ?: defaultValue
+        } catch (_: Exception) {
+            defaultValue
+        }
+    }
+
+    private fun extractByJsonPath(source: String, path: String, defaultValue: String): String {
+        if (path.isBlank()) return defaultValue
+        val root: Any = try {
+            val trimmed = source.trim()
+            if (trimmed.startsWith("[")) {
+                org.json.JSONArray(trimmed)
+            } else {
+                org.json.JSONObject(trimmed)
+            }
+        } catch (_: Exception) {
+            return defaultValue
+        }
+
+        fun readIndexToken(token: String): Pair<String, List<Int>> {
+            val name = token.substringBefore("[")
+            val indexes = mutableListOf<Int>()
+            var rest = token.substringAfter("[", missingDelimiterValue = "")
+            while (rest.isNotEmpty()) {
+                val idxStr = rest.substringBefore("]", missingDelimiterValue = "")
+                val idx = idxStr.toIntOrNull()
+                if (idx != null) indexes.add(idx)
+                rest = rest.substringAfter("[", missingDelimiterValue = "")
+            }
+            return name to indexes
+        }
+
+        fun getChild(current: Any?, name: String): Any? {
+            return when (current) {
+                is org.json.JSONObject -> if (name.isBlank()) current else current.opt(name)
+                else -> null
+            }
+        }
+
+        fun getIndex(current: Any?, index: Int): Any? {
+            return when (current) {
+                is org.json.JSONArray -> current.opt(index)
+                else -> null
+            }
+        }
+
+        var current: Any? = root
+        val segments = path.split('.').map { it.trim() }.filter { it.isNotEmpty() }
+        for (seg in segments) {
+            val (name, indexes) = readIndexToken(seg)
+            if (name.isNotBlank()) {
+                current = getChild(current, name)
+            }
+            for (idx in indexes) {
+                current = getIndex(current, idx)
+            }
+            if (current == null) return defaultValue
+        }
+
+        return when (current) {
+            null -> defaultValue
+            is org.json.JSONObject -> current.toString()
+            is org.json.JSONArray -> current.toString()
+            else -> current.toString()
+        }
     }
 
     private fun getReachableNodeIds(
@@ -173,7 +314,7 @@ class WorkflowExecutor(private val context: Context) {
                 onNodeStateChange = onNodeStateChange
             )
             
-            // 如果执行失败，停止整个工作流
+            // 如果执行失败，停止整个流程
             if (!executionResult) {
                 return@withContext WorkflowExecutionResult(
                     workflowId = workflow.id,
@@ -293,6 +434,8 @@ class WorkflowExecutor(private val context: Context) {
         onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit
     ): Boolean {
         val reachableNodeIds = getReachableNodeIds(startNodeIds, dependencyGraph.adjacencyList)
+        val nodeById = workflow.nodes.associateBy { it.id }
+        val incomingConnectionsByTarget = workflow.connections.groupBy { it.targetNodeId }
         val triggerNodeIds = workflow.nodes.filterIsInstance<TriggerNode>().map { it.id }.toSet()
         val queue: Queue<String> = LinkedList()
         val currentInDegree = mutableMapOf<String, Int>()
@@ -339,16 +482,82 @@ class WorkflowExecutor(private val context: Context) {
             }
             
             // 查找节点
-            val node = workflow.nodes.find { it.id == currentNodeId }
+            val node = nodeById[currentNodeId]
             if (node == null) {
                 AppLogger.w(TAG, "节点不存在: $currentNodeId")
+                continue
+            }
+
+            val incomingConnections = incomingConnectionsByTarget[currentNodeId].orEmpty().filter { conn ->
+                reachableNodeIds.contains(conn.sourceNodeId)
+            }
+
+            val shouldExecute = if (incomingConnections.isEmpty()) {
+                true
+            } else {
+                incomingConnections.any { conn ->
+                    val sourceNode = nodeById[conn.sourceNodeId]
+                    val sourceState = nodeResults[conn.sourceNodeId]
+                    if (isSkippedState(sourceState)) {
+                        return@any false
+                    }
+
+                    val rawCondition = conn.condition?.trim().orEmpty()
+                    val effectiveCondition = if (rawCondition.isBlank() && (sourceNode is ConditionNode || sourceNode is LogicNode)) {
+                        "true"
+                    } else {
+                        rawCondition
+                    }
+
+                    if (effectiveCondition.isBlank()) {
+                        return@any sourceState is NodeExecutionState.Success
+                    }
+
+                    val desiredBool = when (effectiveCondition.lowercase()) {
+                        "true" -> true
+                        "false" -> false
+                        else -> null
+                    }
+
+                    val sourceResult = (sourceState as? NodeExecutionState.Success)?.result
+                    if (sourceResult == null) {
+                        return@any false
+                    }
+
+                    if (desiredBool != null) {
+                        val actual = parseBooleanLike(sourceResult) ?: false
+                        return@any actual == desiredBool
+                    }
+
+                    return@any try {
+                        Regex(effectiveCondition).containsMatchIn(sourceResult)
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+            }
+
+            if (!shouldExecute) {
+                AppLogger.d(TAG, "节点条件不满足，跳过执行: ${node.name} (${node.id})")
+                nodeResults[node.id] = NodeExecutionState.Success("跳过")
+                onNodeStateChange(node.id, NodeExecutionState.Success("跳过"))
+
+                for (nextNodeId in dependencyGraph.adjacencyList[currentNodeId] ?: emptyList()) {
+                    if (!currentInDegree.containsKey(nextNodeId)) {
+                        continue
+                    }
+                    currentInDegree[nextNodeId] = (currentInDegree[nextNodeId] ?: 0) - 1
+                    if (currentInDegree[nextNodeId] == 0) {
+                        queue.offer(nextNodeId)
+                    }
+                }
                 continue
             }
             
             AppLogger.d(TAG, "执行节点: ${node.name} (${node.id})")
             
             // 执行节点
-            val executionSuccess = executeNode(node, nodeResults, onNodeStateChange)
+            val executionSuccess = executeNode(node, workflow, incomingConnections, nodeById, nodeResults, onNodeStateChange)
             
             // 如果执行失败，停止整个流程
             if (!executionSuccess) {
@@ -371,35 +580,12 @@ class WorkflowExecutor(private val context: Context) {
         return true
     }
     
-    
-    /**
-     * 解析节点参数，将 NodeReference 替换为实际的节点输出结果
-     */
     private fun resolveParameters(
         node: ExecuteNode,
         nodeResults: Map<String, NodeExecutionState>
     ): List<ToolParameter> {
         return node.actionConfig.map { (key, paramValue) ->
-            val resolvedValue = when (paramValue) {
-                is com.ai.assistance.operit.data.model.ParameterValue.StaticValue -> {
-                    paramValue.value
-                }
-                is com.ai.assistance.operit.data.model.ParameterValue.NodeReference -> {
-                    val refState = nodeResults[paramValue.nodeId]
-                    when (refState) {
-                        is NodeExecutionState.Success -> {
-                            AppLogger.d(TAG, "解析参数 $key: 引用节点 ${paramValue.nodeId} 的结果")
-                            refState.result
-                        }
-                        is NodeExecutionState.Failed -> {
-                            throw IllegalStateException("引用的节点 ${paramValue.nodeId} 执行失败")
-                        }
-                        else -> {
-                            throw IllegalStateException("引用的节点 ${paramValue.nodeId} 尚未完成执行")
-                        }
-                    }
-                }
-            }
+            val resolvedValue = resolveParameterValue(paramValue, nodeResults)
             ToolParameter(name = key, value = resolvedValue)
         }
     }
@@ -410,10 +596,98 @@ class WorkflowExecutor(private val context: Context) {
      */
     private suspend fun executeNode(
         node: WorkflowNode,
+        workflow: Workflow,
+        incomingConnections: List<WorkflowNodeConnection>,
+        nodeById: Map<String, WorkflowNode>,
         nodeResults: MutableMap<String, NodeExecutionState>,
         onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit
     ): Boolean {
-        // 只执行 ExecuteNode
+        if (node is TriggerNode) {
+            nodeResults[node.id] = NodeExecutionState.Success("触发节点")
+            onNodeStateChange(node.id, NodeExecutionState.Success("触发节点"))
+            return true
+        }
+
+        if (node is ConditionNode) {
+            nodeResults[node.id] = NodeExecutionState.Running
+            onNodeStateChange(node.id, NodeExecutionState.Running)
+
+            return try {
+                val left = resolveParameterValue(node.left, nodeResults)
+                val right = resolveParameterValue(node.right, nodeResults)
+                val ok = compareValues(left, right, node.operator)
+                val result = ok.toString()
+                nodeResults[node.id] = NodeExecutionState.Success(result)
+                onNodeStateChange(node.id, NodeExecutionState.Success(result))
+                true
+            } catch (e: Exception) {
+                val errorMsg = "节点执行异常: ${e.message}"
+                nodeResults[node.id] = NodeExecutionState.Failed(errorMsg)
+                onNodeStateChange(node.id, NodeExecutionState.Failed(errorMsg))
+                false
+            }
+        }
+
+        if (node is LogicNode) {
+            nodeResults[node.id] = NodeExecutionState.Running
+            onNodeStateChange(node.id, NodeExecutionState.Running)
+
+            return try {
+                val inputs = incomingConnections.mapNotNull { conn ->
+                    val state = nodeResults[conn.sourceNodeId]
+                    val result = (state as? NodeExecutionState.Success)?.result ?: return@mapNotNull null
+                    if (isSkippedState(state)) return@mapNotNull null
+                    parseBooleanLike(result)
+                }
+
+                val ok = when (node.operator) {
+                    LogicOperator.AND -> inputs.isNotEmpty() && inputs.all { it }
+                    LogicOperator.OR -> inputs.any { it }
+                }
+                val result = ok.toString()
+                nodeResults[node.id] = NodeExecutionState.Success(result)
+                onNodeStateChange(node.id, NodeExecutionState.Success(result))
+                true
+            } catch (e: Exception) {
+                val errorMsg = "节点执行异常: ${e.message}"
+                nodeResults[node.id] = NodeExecutionState.Failed(errorMsg)
+                onNodeStateChange(node.id, NodeExecutionState.Failed(errorMsg))
+                false
+            }
+        }
+
+        if (node is ExtractNode) {
+            nodeResults[node.id] = NodeExecutionState.Running
+            onNodeStateChange(node.id, NodeExecutionState.Running)
+
+            return try {
+                var sourceText = resolveParameterValue(node.source, nodeResults)
+                if (sourceText.isBlank() && node.source is ParameterValue.StaticValue) {
+                    val fallbackSourceId = incomingConnections.firstOrNull()?.sourceNodeId
+                    if (fallbackSourceId != null) {
+                        val fallbackState = nodeResults[fallbackSourceId]
+                        if (fallbackState is NodeExecutionState.Success && !isSkippedState(fallbackState)) {
+                            sourceText = fallbackState.result
+                        }
+                    }
+                }
+
+                val extracted = when (node.mode) {
+                    ExtractMode.REGEX -> extractByRegex(sourceText, node.expression, node.group, node.defaultValue)
+                    ExtractMode.JSON -> extractByJsonPath(sourceText, node.expression, node.defaultValue)
+                }
+
+                nodeResults[node.id] = NodeExecutionState.Success(extracted)
+                onNodeStateChange(node.id, NodeExecutionState.Success(extracted))
+                true
+            } catch (e: Exception) {
+                val errorMsg = "节点执行异常: ${e.message}"
+                nodeResults[node.id] = NodeExecutionState.Failed(errorMsg)
+                onNodeStateChange(node.id, NodeExecutionState.Failed(errorMsg))
+                false
+            }
+        }
+
         if (node !is ExecuteNode) {
             AppLogger.d(TAG, "跳过非执行节点: ${node.name}")
             nodeResults[node.id] = NodeExecutionState.Success("跳过")

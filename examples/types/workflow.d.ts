@@ -10,6 +10,13 @@ import {
     WorkflowDetailResultData,
     WorkflowNode,
     WorkflowNodeConnection,
+    ConditionNode,
+    LogicNode,
+    ExtractNode,
+    ConditionOperator,
+    LogicOperator,
+    ExtractMode,
+    ParameterValue,
     TriggerNode,
     ExecuteNode,
     NodePosition,
@@ -34,6 +41,21 @@ export namespace Workflow {
      * Execute node configuration
      */
     export interface Execute extends ExecuteNode { }
+
+    /**
+     * Condition node configuration
+     */
+    export interface Condition extends ConditionNode { }
+
+    /**
+     * Logic node configuration
+     */
+    export interface Logic extends LogicNode { }
+
+    /**
+     * Extract node configuration
+     */
+    export interface Extract extends ExtractNode { }
 
     /**
      * Workflow node (union type)
@@ -126,8 +148,14 @@ export {
     WorkflowDetailResultData,
     WorkflowNode,
     WorkflowNodeConnection,
+    ConditionNode,
+    LogicNode,
+    ExtractNode,
+    ConditionOperator,
+    LogicOperator,
+    ExtractMode,
+    ParameterValue,
     TriggerNode,
     ExecuteNode,
     NodePosition
 };
-

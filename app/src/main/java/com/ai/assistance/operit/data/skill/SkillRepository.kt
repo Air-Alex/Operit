@@ -40,7 +40,11 @@ class SkillRepository private constructor(private val context: Context) {
 
     fun deleteSkill(skillName: String): Boolean = skillManager.deleteSkill(skillName)
 
-    fun importSkillFromZip(zipFile: File): String = skillManager.importSkillFromZip(zipFile)
+    suspend fun importSkillFromZip(zipFile: File): String {
+        return withContext(Dispatchers.IO) {
+            skillManager.importSkillFromZip(zipFile)
+        }
+    }
 
     suspend fun importSkillFromGitHubRepo(repoUrl: String): String {
         return withContext(Dispatchers.IO) {

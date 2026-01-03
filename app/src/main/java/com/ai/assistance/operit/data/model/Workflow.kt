@@ -78,6 +78,68 @@ data class ExecuteNode(
     var jsCode: String? = null // 可选：直接执行 JavaScript 代码
 ) : WorkflowNode()
 
+@Serializable
+enum class ConditionOperator {
+    EQ,
+    NE,
+    GT,
+    GTE,
+    LT,
+    LTE,
+    CONTAINS,
+    NOT_CONTAINS,
+    IN,
+    NOT_IN
+}
+
+@Serializable
+data class ConditionNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val type: String = "condition",
+    override var name: String = "条件判断",
+    override var description: String = "",
+    override var position: NodePosition = NodePosition(0f, 0f),
+    var left: ParameterValue = ParameterValue.StaticValue(""),
+    var operator: ConditionOperator = ConditionOperator.EQ,
+    var right: ParameterValue = ParameterValue.StaticValue("")
+) : WorkflowNode()
+
+@Serializable
+enum class LogicOperator {
+    AND,
+    OR
+}
+
+@Serializable
+data class LogicNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val type: String = "logic",
+    override var name: String = "逻辑判断",
+    override var description: String = "",
+    override var position: NodePosition = NodePosition(0f, 0f),
+    var operator: LogicOperator = LogicOperator.AND
+) : WorkflowNode()
+
+@Serializable
+enum class ExtractMode {
+    REGEX,
+    JSON
+}
+
+@Serializable
+data class ExtractNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val type: String = "extract",
+    override var name: String = "提取",
+    override var description: String = "",
+    override var position: NodePosition = NodePosition(0f, 0f),
+    var source: ParameterValue = ParameterValue.StaticValue(""),
+    var mode: ExtractMode = ExtractMode.REGEX,
+    var expression: String = "",
+    var group: Int = 0,
+    var defaultValue: String = ""
+) : WorkflowNode()
+
 /**
  * 参数值类型
  * 支持静态值或引用其他节点的输出

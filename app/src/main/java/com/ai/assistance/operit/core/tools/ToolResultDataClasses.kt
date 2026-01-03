@@ -1289,6 +1289,30 @@ data class WorkflowDetailResultData(
                         sb.appendLine("    描述: ${node.description}")
                     }
                 }
+                is com.ai.assistance.operit.data.model.ConditionNode -> {
+                    sb.appendLine("  - [条件] ${node.name} (${node.id})")
+                    sb.appendLine("    运算: ${node.operator}")
+                    if (node.description.isNotBlank()) {
+                        sb.appendLine("    描述: ${node.description}")
+                    }
+                }
+                is com.ai.assistance.operit.data.model.LogicNode -> {
+                    sb.appendLine("  - [逻辑] ${node.name} (${node.id})")
+                    sb.appendLine("    运算: ${node.operator}")
+                    if (node.description.isNotBlank()) {
+                        sb.appendLine("    描述: ${node.description}")
+                    }
+                }
+                is com.ai.assistance.operit.data.model.ExtractNode -> {
+                    sb.appendLine("  - [提取] ${node.name} (${node.id})")
+                    sb.appendLine("    模式: ${node.mode}")
+                    if (node.expression.isNotBlank()) {
+                        sb.appendLine("    表达式: ${node.expression}")
+                    }
+                    if (node.description.isNotBlank()) {
+                        sb.appendLine("    描述: ${node.description}")
+                    }
+                }
             }
         }
         sb.appendLine()

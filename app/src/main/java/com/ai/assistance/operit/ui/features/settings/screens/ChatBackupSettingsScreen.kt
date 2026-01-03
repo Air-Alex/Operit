@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -27,23 +26,27 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,16 +68,23 @@ import androidx.compose.ui.unit.dp
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.model.ImportStrategy
 import com.ai.assistance.operit.data.model.PreferenceProfile
+import com.ai.assistance.operit.data.backup.OperitBackupDirs
+import com.ai.assistance.operit.data.backup.RoomDatabaseBackupManager
+import com.ai.assistance.operit.data.backup.RoomDatabaseBackupPreferences
+import com.ai.assistance.operit.data.backup.RoomDatabaseBackupScheduler
+import com.ai.assistance.operit.data.backup.RoomDatabaseRestoreManager
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
 import com.ai.assistance.operit.data.repository.ChatHistoryManager
 import com.ai.assistance.operit.data.repository.MemoryRepository
 import com.ai.assistance.operit.data.converter.ExportFormat
 import com.ai.assistance.operit.data.converter.ChatFormat
+import com.ai.assistance.operit.ui.main.MainActivity
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.system.exitProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -88,6 +98,20 @@ enum class ChatHistoryOperation {
     IMPORTED,
     DELETING,
     DELETED,
+    FAILED
+}
+
+enum class RoomDatabaseBackupOperation {
+    IDLE,
+    BACKING_UP,
+    SUCCESS,
+    FAILED
+}
+
+enum class RoomDatabaseRestoreOperation {
+    IDLE,
+    RESTORING,
+    SUCCESS,
     FAILED
 }
 
@@ -109,6 +133,7 @@ enum class ModelConfigOperation {
     FAILED
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChatBackupSettingsScreen() {
     val context = LocalContext.current
@@ -130,19 +155,37 @@ fun ChatBackupSettingsScreen() {
     var memoryOperationMessage by remember { mutableStateOf("") }
     var modelConfigOperationState by remember { mutableStateOf(ModelConfigOperation.IDLE) }
     var modelConfigOperationMessage by remember { mutableStateOf("") }
+    var roomDbBackupOperationState by remember { mutableStateOf(RoomDatabaseBackupOperation.IDLE) }
+    var roomDbBackupOperationMessage by remember { mutableStateOf("") }
+    var roomDbRestoreOperationState by remember { mutableStateOf(RoomDatabaseRestoreOperation.IDLE) }
+    var roomDbRestoreOperationMessage by remember { mutableStateOf("") }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showMemoryImportStrategyDialog by remember { mutableStateOf(false) }
     var pendingMemoryImportUri by remember { mutableStateOf<Uri?>(null) }
-    
+    var pendingRoomDbRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingRoomDbRestoreFile by remember { mutableStateOf<File?>(null) }
+    var showRoomDbRestoreConfirmDialog by remember { mutableStateOf(false) }
+    var showRoomDbRestoreRestartDialog by remember { mutableStateOf(false) }
+
     // 模型配置导出安全警告
     var showModelConfigExportWarning by remember { mutableStateOf(false) }
     var exportedModelConfigPath by remember { mutableStateOf("") }
-    
+
     // Operit 目录备份文件统计
     var chatBackupFileCount by remember { mutableStateOf(0) }
     var memoryBackupFileCount by remember { mutableStateOf(0) }
     var modelConfigBackupFileCount by remember { mutableStateOf(0) }
+    var roomDbBackupFileCount by remember { mutableStateOf(0) }
+    var recentRoomDbBackups by remember { mutableStateOf<List<File>>(emptyList()) }
     var isScanning by remember { mutableStateOf(false) }
+
+    val roomDbBackupPreferences = remember { RoomDatabaseBackupPreferences.getInstance(context) }
+    val isRoomDbDailyBackupEnabled by roomDbBackupPreferences.enableDailyBackupFlow.collectAsState(initial = true)
+    val roomDbLastSuccessTime by roomDbBackupPreferences.lastSuccessTimeFlow.collectAsState(initial = 0L)
+    val roomDbLastError by roomDbBackupPreferences.lastErrorFlow.collectAsState(initial = "")
+    val roomDbMaxBackupCount by roomDbBackupPreferences.maxBackupCountFlow.collectAsState(
+        initial = RoomDatabaseBackupPreferences.DEFAULT_MAX_BACKUP_COUNT
+    )
 
     val profileIds by userPreferencesManager.profileListFlow.collectAsState(initial = listOf("default"))
     var allProfiles by remember { mutableStateOf<List<PreferenceProfile>>(emptyList()) }
@@ -150,11 +193,11 @@ fun ChatBackupSettingsScreen() {
     var selectedImportProfileId by remember { mutableStateOf(activeProfileId) }
     var showExportProfileDialog by remember { mutableStateOf(false) }
     var showImportProfileDialog by remember { mutableStateOf(false) }
-    
+
     // 导出格式选择
     var showExportFormatDialog by remember { mutableStateOf(false) }
     var selectedExportFormat by remember { mutableStateOf(ExportFormat.JSON) }
-    
+
     // 导入格式选择
     var showImportFormatDialog by remember { mutableStateOf(false) }
     var selectedImportFormat by remember { mutableStateOf(ChatFormat.OPERIT) }
@@ -191,37 +234,51 @@ fun ChatBackupSettingsScreen() {
             totalMemoryLinkCount = graph.edges.size
         }
     }
-    
+
     LaunchedEffect(Unit) {
         modelConfigManager.configListFlow.collect { configList ->
             totalModelConfigCount = configList.size
         }
     }
-    
+
     // 扫描 Operit 目录中的备份文件
     LaunchedEffect(Unit) {
         scope.launch {
             isScanning = true
             try {
-                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val operitDir = File(downloadDir, "Operit")
-                
-                if (operitDir.exists() && operitDir.isDirectory) {
-                    val files = operitDir.listFiles() ?: emptyArray()
-                    
-                    chatBackupFileCount = files.count { file ->
-                        file.name.startsWith("chat_backup_") && file.extension == "json" ||
-                        file.name.startsWith("chat_export_") && file.extension in listOf("json", "md", "html", "txt")
-                    }
-                    
-                    memoryBackupFileCount = files.count { file ->
-                        file.name.startsWith("memory_backup_") && file.extension == "json"
-                    }
-                    
-                    modelConfigBackupFileCount = files.count { file ->
-                        file.name.startsWith("model_config_backup_") && file.extension == "json"
-                    }
+                val legacyDir = OperitBackupDirs.operitRootDir()
+                val legacyFiles = legacyDir.listFiles()?.toList() ?: emptyList()
+
+                fun mergedFiles(newDir: File): List<File> {
+                    val newFiles = newDir.listFiles()?.toList() ?: emptyList()
+                    return (newFiles + legacyFiles)
+                        .filter { it.isFile }
+                        .distinctBy { it.name }
                 }
+
+                val chatFiles = mergedFiles(OperitBackupDirs.chatDir())
+                val memoryFiles = mergedFiles(OperitBackupDirs.memoryDir())
+                val modelConfigFiles = mergedFiles(OperitBackupDirs.modelConfigDir())
+                val roomDbFiles = mergedFiles(OperitBackupDirs.roomDbDir())
+
+                chatBackupFileCount = chatFiles.count { file ->
+                    file.name.startsWith("chat_backup_") && file.extension == "json" ||
+                        file.name.startsWith("chat_export_") && file.extension in listOf("json", "md", "html", "txt")
+                }
+
+                memoryBackupFileCount = memoryFiles.count { file ->
+                    file.name.startsWith("memory_backup_") && file.extension == "json"
+                }
+
+                modelConfigBackupFileCount = modelConfigFiles.count { file ->
+                    file.name.startsWith("model_config_backup_") && file.extension == "json"
+                }
+
+                roomDbBackupFileCount = roomDbFiles.count { file ->
+                    RoomDatabaseRestoreManager.isRoomDatabaseBackupFile(file.name)
+                }
+
+                recentRoomDbBackups = RoomDatabaseRestoreManager.listRecentBackups(context, limit = 3)
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -243,6 +300,19 @@ fun ChatBackupSettingsScreen() {
             }
         }
 
+    val roomDbRestoreFilePickerLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.data?.let { uri ->
+                    pendingRoomDbRestoreUri = uri
+                    pendingRoomDbRestoreFile = null
+                    showRoomDbRestoreConfirmDialog = true
+                }
+            }
+        }
+
     val memoryFilePickerLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.StartActivityForResult()
@@ -254,7 +324,7 @@ fun ChatBackupSettingsScreen() {
                 }
             }
         }
-    
+
     val modelConfigFilePickerLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.StartActivityForResult()
@@ -267,7 +337,7 @@ fun ChatBackupSettingsScreen() {
                             val inputStream = context.contentResolver.openInputStream(uri)
                             val jsonContent = inputStream?.bufferedReader()?.use { it.readText() }
                             if (jsonContent != null) {
-                                val (newCount, updatedCount, skippedCount) = 
+                                val (newCount, updatedCount, skippedCount) =
                                     modelConfigManager.importConfigs(jsonContent)
                                 modelConfigOperationState = ModelConfigOperation.IMPORTED
                                 modelConfigOperationMessage = "成功导入模型配置：\n" +
@@ -310,30 +380,45 @@ fun ChatBackupSettingsScreen() {
                 chatBackupCount = chatBackupFileCount,
                 memoryBackupCount = memoryBackupFileCount,
                 modelConfigBackupCount = modelConfigBackupFileCount,
+                roomDbBackupCount = roomDbBackupFileCount,
                 isScanning = isScanning,
                 onRefresh = {
                     scope.launch {
                         isScanning = true
                         try {
-                            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                            val operitDir = File(downloadDir, "Operit")
-                            
-                            if (operitDir.exists() && operitDir.isDirectory) {
-                                val files = operitDir.listFiles() ?: emptyArray()
-                                
-                                chatBackupFileCount = files.count { file ->
-                                    file.name.startsWith("chat_backup_") && file.extension == "json" ||
-                                    file.name.startsWith("chat_export_") && file.extension in listOf("json", "md", "html", "txt")
-                                }
-                                
-                                memoryBackupFileCount = files.count { file ->
-                                    file.name.startsWith("memory_backup_") && file.extension == "json"
-                                }
-                                
-                                modelConfigBackupFileCount = files.count { file ->
-                                    file.name.startsWith("model_config_backup_") && file.extension == "json"
-                                }
+                            val legacyDir = OperitBackupDirs.operitRootDir()
+                            val legacyFiles = legacyDir.listFiles()?.toList() ?: emptyList()
+
+                            fun mergedFiles(newDir: File): List<File> {
+                                val newFiles = newDir.listFiles()?.toList() ?: emptyList()
+                                return (newFiles + legacyFiles)
+                                    .filter { it.isFile }
+                                    .distinctBy { it.name }
                             }
+
+                            val chatFiles = mergedFiles(OperitBackupDirs.chatDir())
+                            val memoryFiles = mergedFiles(OperitBackupDirs.memoryDir())
+                            val modelConfigFiles = mergedFiles(OperitBackupDirs.modelConfigDir())
+                            val roomDbFiles = mergedFiles(OperitBackupDirs.roomDbDir())
+
+                            chatBackupFileCount = chatFiles.count { file ->
+                                file.name.startsWith("chat_backup_") && file.extension == "json" ||
+                                    file.name.startsWith("chat_export_") && file.extension in listOf("json", "md", "html", "txt")
+                            }
+
+                            memoryBackupFileCount = memoryFiles.count { file ->
+                                file.name.startsWith("memory_backup_") && file.extension == "json"
+                            }
+
+                            modelConfigBackupFileCount = modelConfigFiles.count { file ->
+                                file.name.startsWith("model_config_backup_") && file.extension == "json"
+                            }
+
+                            roomDbBackupFileCount = roomDbFiles.count { file ->
+                                RoomDatabaseRestoreManager.isRoomDatabaseBackupFile(file.name)
+                            }
+
+                            recentRoomDbBackups = RoomDatabaseRestoreManager.listRecentBackups(context, limit = 3)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         } finally {
@@ -342,6 +427,276 @@ fun ChatBackupSettingsScreen() {
                     }
                 }
             )
+        }
+        item {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    SectionHeader(
+                        title = stringResource(R.string.backup_room_db_title),
+                        subtitle = stringResource(R.string.backup_room_db_subtitle, roomDbMaxBackupCount),
+                        icon = Icons.Default.Storage
+                    )
+
+                    Text(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = stringResource(R.string.backup_room_db_low_level_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.backup_room_db_enable_daily),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.backup_room_db_enable_daily_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isRoomDbDailyBackupEnabled,
+                            onCheckedChange = { enabled ->
+                                scope.launch {
+                                    roomDbBackupPreferences.setDailyBackupEnabled(enabled)
+                                    if (enabled) {
+                                        RoomDatabaseBackupScheduler.ensureScheduled(context)
+                                    } else {
+                                        RoomDatabaseBackupScheduler.cancelScheduled(context)
+                                    }
+                                }
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.backup_room_db_max_backup_count),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.backup_room_db_max_backup_count_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    val next = (roomDbMaxBackupCount - 1).coerceAtLeast(1)
+                                    scope.launch {
+                                        roomDbBackupPreferences.setMaxBackupCount(next)
+                                        RoomDatabaseBackupManager.pruneExcessBackups(context)
+                                        isScanning = true
+                                        try {
+                                            val legacyDir = OperitBackupDirs.operitRootDir()
+                                            val legacyFiles = legacyDir.listFiles()?.toList() ?: emptyList()
+                                            val newFiles = OperitBackupDirs.roomDbDir().listFiles()?.toList() ?: emptyList()
+                                            val roomDbFiles = (newFiles + legacyFiles)
+                                                .filter { it.isFile }
+                                                .distinctBy { it.name }
+                                            roomDbBackupFileCount = roomDbFiles.count { file ->
+                                                RoomDatabaseRestoreManager.isRoomDatabaseBackupFile(file.name)
+                                            }
+                                            recentRoomDbBackups = RoomDatabaseRestoreManager.listRecentBackups(context, limit = 3)
+                                        } finally {
+                                            isScanning = false
+                                        }
+                                    }
+                                },
+                                enabled = roomDbMaxBackupCount > 1
+                            ) { Text("-") }
+
+                            Text(text = roomDbMaxBackupCount.toString())
+
+                            TextButton(
+                                onClick = {
+                                    val next = (roomDbMaxBackupCount + 1).coerceAtMost(100)
+                                    scope.launch {
+                                        roomDbBackupPreferences.setMaxBackupCount(next)
+                                    }
+                                },
+                                enabled = roomDbMaxBackupCount < 100
+                            ) { Text("+") }
+                        }
+                    }
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ManagementButton(
+                            text = stringResource(R.string.backup_room_db_backup_now),
+                            icon = Icons.Default.CloudDownload,
+                            onClick = {
+                                scope.launch {
+                                    roomDbBackupOperationState = RoomDatabaseBackupOperation.BACKING_UP
+                                    try {
+                                        val result = withContext(Dispatchers.IO) {
+                                            RoomDatabaseBackupManager.backupIfNeeded(context, force = true)
+                                        }
+                                        roomDbBackupOperationState = RoomDatabaseBackupOperation.SUCCESS
+                                        roomDbBackupOperationMessage =
+                                            result.backupFile?.absolutePath
+                                                ?: context.getString(R.string.backup_operation_failed)
+
+                                        isScanning = true
+                                        try {
+                                            val legacyDir = OperitBackupDirs.operitRootDir()
+                                            val legacyFiles = legacyDir.listFiles()?.toList() ?: emptyList()
+                                            val newFiles = OperitBackupDirs.roomDbDir().listFiles()?.toList() ?: emptyList()
+                                            val roomDbFiles = (newFiles + legacyFiles)
+                                                .filter { it.isFile }
+                                                .distinctBy { it.name }
+
+                                            roomDbBackupFileCount = roomDbFiles.count { file ->
+                                                RoomDatabaseRestoreManager.isRoomDatabaseBackupFile(file.name)
+                                            }
+
+                                            recentRoomDbBackups = RoomDatabaseRestoreManager.listRecentBackups(context, limit = 3)
+                                        } finally {
+                                            isScanning = false
+                                        }
+                                    } catch (e: Exception) {
+                                        roomDbBackupOperationState = RoomDatabaseBackupOperation.FAILED
+                                        roomDbBackupOperationMessage = e.localizedMessage ?: e.toString()
+                                        try {
+                                            roomDbBackupPreferences.markFailure(roomDbBackupOperationMessage)
+                                        } catch (_: Exception) {
+
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        ManagementButton(
+                            text = stringResource(R.string.backup_room_db_restore_from_file),
+                            icon = Icons.Default.FileOpen,
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    type = "*/*"
+                                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip"))
+                                }
+                                roomDbRestoreFilePickerLauncher.launch(intent)
+                            },
+                            modifier = Modifier.weight(1f, fill = false),
+                            isWarning = true
+                        )
+                    }
+
+                    AnimatedVisibility(visible = recentRoomDbBackups.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.backup_room_db_recent_auto_backups),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            recentRoomDbBackups.forEach { file ->
+                                RoomDbBackupListItem(
+                                    file = file,
+                                    onRestoreClick = {
+                                        pendingRoomDbRestoreFile = file
+                                        pendingRoomDbRestoreUri = null
+                                        showRoomDbRestoreConfirmDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = roomDbBackupOperationState != RoomDatabaseBackupOperation.IDLE) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            when (roomDbBackupOperationState) {
+                                RoomDatabaseBackupOperation.BACKING_UP ->
+                                    OperationProgressView(message = stringResource(R.string.backup_room_db_backing_up))
+                                RoomDatabaseBackupOperation.SUCCESS ->
+                                    OperationResultCard(
+                                        title = stringResource(R.string.backup_export_success),
+                                        message = roomDbBackupOperationMessage,
+                                        icon = Icons.Default.CloudDownload
+                                    )
+                                RoomDatabaseBackupOperation.FAILED ->
+                                    OperationResultCard(
+                                        title = stringResource(R.string.backup_operation_failed),
+                                        message = roomDbBackupOperationMessage,
+                                        icon = Icons.Default.Info,
+                                        isError = true
+                                    )
+                                else -> {}
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = roomDbRestoreOperationState != RoomDatabaseRestoreOperation.IDLE) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            when (roomDbRestoreOperationState) {
+                                RoomDatabaseRestoreOperation.RESTORING ->
+                                    OperationProgressView(message = stringResource(R.string.backup_room_db_restoring))
+                                RoomDatabaseRestoreOperation.SUCCESS ->
+                                    OperationResultCard(
+                                        title = stringResource(R.string.backup_room_db_restore_success),
+                                        message = roomDbRestoreOperationMessage,
+                                        icon = Icons.Default.Restore
+                                    )
+                                RoomDatabaseRestoreOperation.FAILED ->
+                                    OperationResultCard(
+                                        title = stringResource(R.string.backup_room_db_restore_failed),
+                                        message = roomDbRestoreOperationMessage,
+                                        icon = Icons.Default.Info,
+                                        isError = true
+                                    )
+                                else -> {}
+                            }
+                        }
+                    }
+
+                    val timeText = remember(roomDbLastSuccessTime) {
+                        if (roomDbLastSuccessTime <= 0L) {
+                            "-"
+                        } else {
+                            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(roomDbLastSuccessTime))
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.backup_room_db_last_success, timeText),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (roomDbLastError.isNotBlank()) {
+                        Text(
+                            text = stringResource(R.string.backup_room_db_last_error, roomDbLastError),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
         }
         item {
             DataManagementCard(
@@ -394,16 +749,12 @@ fun ChatBackupSettingsScreen() {
                         modelConfigOperationState = ModelConfigOperation.EXPORTING
                         try {
                             val jsonContent = modelConfigManager.exportAllConfigs()
-                            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                            val exportDir = File(downloadDir, "Operit")
-                            if (!exportDir.exists()) {
-                                exportDir.mkdirs()
-                            }
+                            val exportDir = OperitBackupDirs.modelConfigDir()
                             val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
                             val timestamp = dateFormat.format(Date())
                             val exportFile = File(exportDir, "model_config_backup_$timestamp.json")
                             exportFile.writeText(jsonContent)
-                            
+
                             // 导出成功，显示安全警告对话框
                             exportedModelConfigPath = exportFile.absolutePath
                             showModelConfigExportWarning = true
@@ -551,7 +902,7 @@ fun ChatBackupSettingsScreen() {
             }
         )
     }
-    
+
     if (showExportFormatDialog) {
         ExportFormatDialog(
             selectedFormat = selectedExportFormat,
@@ -587,7 +938,7 @@ fun ChatBackupSettingsScreen() {
             }
         )
     }
-    
+
     if (showImportFormatDialog) {
         ImportFormatDialog(
             selectedFormat = selectedImportFormat,
@@ -634,7 +985,7 @@ fun ChatBackupSettingsScreen() {
             }
         )
     }
-    
+
     // 模型配置导出安全警告对话框
     if (showModelConfigExportWarning) {
         ModelConfigExportWarningDialog(
@@ -642,6 +993,103 @@ fun ChatBackupSettingsScreen() {
             onDismiss = {
                 showModelConfigExportWarning = false
                 modelConfigOperationMessage = "成功导出到：$exportedModelConfigPath"
+            }
+        )
+    }
+
+    if (showRoomDbRestoreConfirmDialog) {
+        val targetName = pendingRoomDbRestoreFile?.name
+            ?: pendingRoomDbRestoreUri?.lastPathSegment
+            ?: "-"
+
+        AlertDialog(
+            onDismissRequest = {
+                showRoomDbRestoreConfirmDialog = false
+                pendingRoomDbRestoreUri = null
+                pendingRoomDbRestoreFile = null
+            },
+            title = { Text(stringResource(R.string.backup_room_db_restore_confirm_title)) },
+            text = { Text(stringResource(R.string.backup_room_db_restore_confirm_message, targetName)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRoomDbRestoreConfirmDialog = false
+                        val uri = pendingRoomDbRestoreUri
+                        val file = pendingRoomDbRestoreFile
+                        pendingRoomDbRestoreUri = null
+                        pendingRoomDbRestoreFile = null
+
+                        scope.launch {
+                            roomDbRestoreOperationState = RoomDatabaseRestoreOperation.RESTORING
+                            roomDbRestoreOperationMessage = ""
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    if (file != null) {
+                                        RoomDatabaseRestoreManager.restoreFromBackupFile(context, file)
+                                    } else if (uri != null) {
+                                        try {
+                                            context.contentResolver.takePersistableUriPermission(
+                                                uri,
+                                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                            )
+                                        } catch (_: Exception) {
+                                        }
+                                        RoomDatabaseRestoreManager.restoreFromBackupUri(context, uri)
+                                    } else {
+                                        throw IllegalStateException("No restore target")
+                                    }
+                                }
+
+                                roomDbRestoreOperationState = RoomDatabaseRestoreOperation.SUCCESS
+                                roomDbRestoreOperationMessage = targetName
+                                showRoomDbRestoreRestartDialog = true
+                            } catch (e: Exception) {
+                                roomDbRestoreOperationState = RoomDatabaseRestoreOperation.FAILED
+                                roomDbRestoreOperationMessage = e.localizedMessage ?: e.toString()
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.backup_room_db_restore_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRoomDbRestoreConfirmDialog = false
+                        pendingRoomDbRestoreUri = null
+                        pendingRoomDbRestoreFile = null
+                    }
+                ) {
+                    Text(stringResource(R.string.backup_room_db_restore_cancel_action))
+                }
+            }
+        )
+    }
+
+    if (showRoomDbRestoreRestartDialog) {
+        AlertDialog(
+            onDismissRequest = { showRoomDbRestoreRestartDialog = false },
+            title = { Text(stringResource(R.string.backup_room_db_restart_title)) },
+            text = { Text(stringResource(R.string.backup_room_db_restart_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRoomDbRestoreRestartDialog = false
+                        val intent = Intent(context, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        }
+                        context.startActivity(intent)
+                        exitProcess(0)
+                    }
+                ) {
+                    Text(stringResource(R.string.backup_room_db_restart_now))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRoomDbRestoreRestartDialog = false }) {
+                    Text(stringResource(R.string.backup_room_db_restart_later))
+                }
             }
         )
     }
@@ -702,6 +1150,7 @@ private fun BackupFilesStatisticsCard(
     chatBackupCount: Int,
     memoryBackupCount: Int,
     modelConfigBackupCount: Int,
+    roomDbBackupCount: Int,
     isScanning: Boolean,
     onRefresh: () -> Unit
 ) {
@@ -771,6 +1220,12 @@ private fun BackupFilesStatisticsCard(
                     label = stringResource(R.string.backup_model_config_files),
                     color = MaterialTheme.colorScheme.tertiary
                 )
+                BackupFileStatItem(
+                    icon = Icons.Default.Storage,
+                    count = roomDbBackupCount,
+                    label = stringResource(R.string.backup_room_db_files),
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
             
             if (!isScanning) {
@@ -827,6 +1282,77 @@ private fun BackupFileStatItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoomDbBackupListItem(
+    file: File,
+    onRestoreClick: () -> Unit
+) {
+    val parsed = remember(file.name) {
+        val name = file.name
+        when {
+            name.startsWith("room_db_backup_") && name.endsWith(".zip") -> {
+                Pair(
+                    R.string.backup_room_db_backup_type_auto,
+                    name.removePrefix("room_db_backup_").removeSuffix(".zip")
+                )
+            }
+            name.startsWith("room_db_manual_backup_") && name.endsWith(".zip") -> {
+                val raw = name.removePrefix("room_db_manual_backup_").removeSuffix(".zip")
+                val formatted = try {
+                    val input = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+                    val output = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                    output.format(input.parse(raw)!!)
+                } catch (_: Exception) {
+                    raw
+                }
+                Pair(R.string.backup_room_db_backup_type_manual, formatted)
+            }
+            else -> Pair(R.string.backup_room_db_backup_type_manual, name)
+        }
+    }
+    val typeLabel = stringResource(parsed.first)
+    val displayTime = parsed.second
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Storage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.backup_room_db_restore_to_day, "$typeLabel $displayTime"),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            TextButton(onClick = onRestoreClick) {
+                Icon(
+                    imageVector = Icons.Default.Restore,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = stringResource(R.string.backup_room_db_restore_confirm_action))
             }
         }
     }
@@ -999,12 +1525,18 @@ private fun ManagementButton(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isDestructive: Boolean = false
+    isDestructive: Boolean = false,
+    isWarning: Boolean = false
 ) {
     val colors = if (isDestructive) {
         ButtonDefaults.filledTonalButtonColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.error
+        )
+    } else if (isWarning) {
+        ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.tertiary
         )
     } else {
         ButtonDefaults.filledTonalButtonColors()
@@ -1438,11 +1970,7 @@ private suspend fun exportMemories(_context: Context, memoryRepository: MemoryRe
         try {
             val jsonString = memoryRepository.exportMemoriesToJson()
 
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val exportDir = File(downloadDir, "Operit")
-            if (!exportDir.exists()) {
-                exportDir.mkdirs()
-            }
+            val exportDir = OperitBackupDirs.memoryDir()
 
             val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
             val timestamp = dateFormat.format(Date())

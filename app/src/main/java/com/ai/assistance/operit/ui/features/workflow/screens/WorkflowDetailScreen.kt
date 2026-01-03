@@ -38,6 +38,12 @@ import com.ai.assistance.operit.data.model.Workflow
 import com.ai.assistance.operit.data.model.WorkflowNode
 import com.ai.assistance.operit.data.model.TriggerNode
 import com.ai.assistance.operit.data.model.ExecuteNode
+import com.ai.assistance.operit.data.model.ConditionNode
+import com.ai.assistance.operit.data.model.ConditionOperator
+import com.ai.assistance.operit.data.model.LogicNode
+import com.ai.assistance.operit.data.model.LogicOperator
+import com.ai.assistance.operit.data.model.ExtractNode
+import com.ai.assistance.operit.data.model.ExtractMode
 import com.ai.assistance.operit.data.model.ParameterValue
 import com.ai.assistance.operit.data.model.ToolParameterSchema
 import com.ai.assistance.operit.ui.components.CustomScaffold
@@ -464,6 +470,9 @@ fun NodeDialog(
     val initialNodeType = when (node) {
         is TriggerNode -> "trigger"
         is ExecuteNode -> "execute"
+        is ConditionNode -> "condition"
+        is LogicNode -> "logic"
+        is ExtractNode -> "extract"
         else -> "trigger"
     }
     
@@ -640,13 +649,62 @@ fun NodeDialog(
             } else ""
         )
     }
+
+    val initialConditionLeft = if (node is ConditionNode) node.left else ParameterValue.StaticValue("")
+    val initialConditionRight = if (node is ConditionNode) node.right else ParameterValue.StaticValue("")
+    var conditionLeftIsReference by remember { mutableStateOf(initialConditionLeft is ParameterValue.NodeReference) }
+    var conditionLeftValue by remember {
+        mutableStateOf(
+            when (initialConditionLeft) {
+                is ParameterValue.StaticValue -> initialConditionLeft.value
+                is ParameterValue.NodeReference -> initialConditionLeft.nodeId
+            }
+        )
+    }
+    var conditionRightIsReference by remember { mutableStateOf(initialConditionRight is ParameterValue.NodeReference) }
+    var conditionRightValue by remember {
+        mutableStateOf(
+            when (initialConditionRight) {
+                is ParameterValue.StaticValue -> initialConditionRight.value
+                is ParameterValue.NodeReference -> initialConditionRight.nodeId
+            }
+        )
+    }
+    var conditionOperator by remember {
+        mutableStateOf(if (node is ConditionNode) node.operator else ConditionOperator.EQ)
+    }
+    var conditionOperatorExpanded by remember { mutableStateOf(false) }
+
+    var logicOperator by remember {
+        mutableStateOf(if (node is LogicNode) node.operator else LogicOperator.AND)
+    }
+    var logicOperatorExpanded by remember { mutableStateOf(false) }
+
+    val initialExtractSource = if (node is ExtractNode) node.source else ParameterValue.StaticValue("")
+    var extractSourceIsReference by remember { mutableStateOf(initialExtractSource is ParameterValue.NodeReference) }
+    var extractSourceValue by remember {
+        mutableStateOf(
+            when (initialExtractSource) {
+                is ParameterValue.StaticValue -> initialExtractSource.value
+                is ParameterValue.NodeReference -> initialExtractSource.nodeId
+            }
+        )
+    }
+    var extractMode by remember { mutableStateOf(if (node is ExtractNode) node.mode else ExtractMode.REGEX) }
+    var extractModeExpanded by remember { mutableStateOf(false) }
+    var extractExpression by remember { mutableStateOf(if (node is ExtractNode) node.expression else "") }
+    var extractGroupText by remember { mutableStateOf(if (node is ExtractNode) node.group.toString() else "0") }
+    var extractDefaultValue by remember { mutableStateOf(if (node is ExtractNode) node.defaultValue else "") }
     
     // 定时配置对话框状态
     var showScheduleDialog by remember { mutableStateOf(false) }
 
     val nodeTypes = mapOf(
         "trigger" to "触发节点",
-        "execute" to "执行节点"
+        "execute" to "执行节点",
+        "condition" to "条件节点",
+        "logic" to "逻辑节点",
+        "extract" to "提取节点"
     )
 
     val triggerTypes = mapOf(
@@ -668,30 +726,30 @@ fun NodeDialog(
             ) {
                 // 节点类型选择（仅在创建模式下显示）
                 if (!isEditMode) {
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    OutlinedTextField(
-                        value = nodeTypes[nodeType] ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("节点类型") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
+                    ExposedDropdownMenuBox(
                         expanded = expanded,
-                        onDismissRequest = { expanded = false }
+                        onExpandedChange = { expanded = !expanded }
                     ) {
-                        nodeTypes.forEach { (key, value) ->
-                            DropdownMenuItem(
-                                text = { Text(value) },
-                                onClick = {
-                                    nodeType = key
-                                    expanded = false
-                                }
-                            )
+                        OutlinedTextField(
+                            value = nodeTypes[nodeType] ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("节点类型") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            nodeTypes.forEach { (key, value) ->
+                                DropdownMenuItem(
+                                    text = { Text(value) },
+                                    onClick = {
+                                        nodeType = key
+                                        expanded = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -714,6 +772,9 @@ fun NodeDialog(
                                     else -> "如: 触发器"
                                 }
                                 "execute" -> "如: ${actionType.takeIf { it.isNotBlank() } ?: "执行动作"}"
+                                "condition" -> "如: 条件判断"
+                                "logic" -> "如: 逻辑判断"
+                                "extract" -> "如: 提取"
                                 else -> nodeTypes[nodeType] ?: ""
                             }
                         )
@@ -948,6 +1009,343 @@ fun NodeDialog(
                             Text("添加参数")
                         }
                     }
+                    "condition" -> {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Text(
+                            text = "条件配置",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        ExposedDropdownMenuBox(
+                            expanded = conditionOperatorExpanded,
+                            onExpandedChange = { conditionOperatorExpanded = !conditionOperatorExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = conditionOperator.name,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("运算符") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = conditionOperatorExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = conditionOperatorExpanded,
+                                onDismissRequest = { conditionOperatorExpanded = false }
+                            ) {
+                                ConditionOperator.values().forEach { op ->
+                                    DropdownMenuItem(
+                                        text = { Text(op.name) },
+                                        onClick = {
+                                            conditionOperator = op
+                                            conditionOperatorExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "左值",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = if (conditionLeftIsReference) {
+                                    workflow.nodes.find { it.id == conditionLeftValue }?.name ?: "[未知节点]"
+                                } else {
+                                    conditionLeftValue
+                                },
+                                onValueChange = { v ->
+                                    if (!conditionLeftIsReference) conditionLeftValue = v
+                                },
+                                label = { Text("左值") },
+                                modifier = Modifier.weight(1f),
+                                readOnly = conditionLeftIsReference,
+                                enabled = !conditionLeftIsReference
+                            )
+
+                            var showLeftSelector by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = { showLeftSelector = true },
+                                enabled = availablePredecessors.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "选择前置节点"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showLeftSelector,
+                                onDismissRequest = { showLeftSelector = false }
+                            ) {
+                                if (conditionLeftIsReference) {
+                                    DropdownMenuItem(
+                                        text = { Text("使用静态值") },
+                                        onClick = {
+                                            conditionLeftIsReference = false
+                                            conditionLeftValue = ""
+                                            showLeftSelector = false
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                }
+                                availablePredecessors.forEach { predecessorNode ->
+                                    DropdownMenuItem(
+                                        text = { Text(predecessorNode.name) },
+                                        onClick = {
+                                            conditionLeftIsReference = true
+                                            conditionLeftValue = predecessorNode.id
+                                            showLeftSelector = false
+                                        }
+                                    )
+                                }
+                                if (availablePredecessors.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("无可用前置节点") },
+                                        onClick = { showLeftSelector = false },
+                                        enabled = false
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "右值",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = if (conditionRightIsReference) {
+                                    workflow.nodes.find { it.id == conditionRightValue }?.name ?: "[未知节点]"
+                                } else {
+                                    conditionRightValue
+                                },
+                                onValueChange = { v ->
+                                    if (!conditionRightIsReference) conditionRightValue = v
+                                },
+                                label = { Text("右值") },
+                                modifier = Modifier.weight(1f),
+                                readOnly = conditionRightIsReference,
+                                enabled = !conditionRightIsReference
+                            )
+
+                            var showRightSelector by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = { showRightSelector = true },
+                                enabled = availablePredecessors.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "选择前置节点"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showRightSelector,
+                                onDismissRequest = { showRightSelector = false }
+                            ) {
+                                if (conditionRightIsReference) {
+                                    DropdownMenuItem(
+                                        text = { Text("使用静态值") },
+                                        onClick = {
+                                            conditionRightIsReference = false
+                                            conditionRightValue = ""
+                                            showRightSelector = false
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                }
+                                availablePredecessors.forEach { predecessorNode ->
+                                    DropdownMenuItem(
+                                        text = { Text(predecessorNode.name) },
+                                        onClick = {
+                                            conditionRightIsReference = true
+                                            conditionRightValue = predecessorNode.id
+                                            showRightSelector = false
+                                        }
+                                    )
+                                }
+                                if (availablePredecessors.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("无可用前置节点") },
+                                        onClick = { showRightSelector = false },
+                                        enabled = false
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    "logic" -> {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Text(
+                            text = "逻辑配置",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        ExposedDropdownMenuBox(
+                            expanded = logicOperatorExpanded,
+                            onExpandedChange = { logicOperatorExpanded = !logicOperatorExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = logicOperator.name,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("逻辑运算") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = logicOperatorExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = logicOperatorExpanded,
+                                onDismissRequest = { logicOperatorExpanded = false }
+                            ) {
+                                LogicOperator.values().forEach { op ->
+                                    DropdownMenuItem(
+                                        text = { Text(op.name) },
+                                        onClick = {
+                                            logicOperator = op
+                                            logicOperatorExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    "extract" -> {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Text(
+                            text = "提取配置",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        ExposedDropdownMenuBox(
+                            expanded = extractModeExpanded,
+                            onExpandedChange = { extractModeExpanded = !extractModeExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = extractMode.name,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("模式") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = extractModeExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = extractModeExpanded,
+                                onDismissRequest = { extractModeExpanded = false }
+                            ) {
+                                ExtractMode.values().forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.name) },
+                                        onClick = {
+                                            extractMode = mode
+                                            extractModeExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = extractExpression,
+                            onValueChange = { extractExpression = it },
+                            label = { Text(if (extractMode == ExtractMode.REGEX) "正则表达式" else "JSON 路径") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        if (extractMode == ExtractMode.REGEX) {
+                            OutlinedTextField(
+                                value = extractGroupText,
+                                onValueChange = { extractGroupText = it },
+                                label = { Text("分组编号") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = extractDefaultValue,
+                            onValueChange = { extractDefaultValue = it },
+                            label = { Text("默认值") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = if (extractSourceIsReference) {
+                                    workflow.nodes.find { it.id == extractSourceValue }?.name ?: "[未知节点]"
+                                } else {
+                                    extractSourceValue
+                                },
+                                onValueChange = { v ->
+                                    if (!extractSourceIsReference) extractSourceValue = v
+                                },
+                                label = { Text("来源") },
+                                modifier = Modifier.weight(1f),
+                                readOnly = extractSourceIsReference,
+                                enabled = !extractSourceIsReference
+                            )
+
+                            var showSourceSelector by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = { showSourceSelector = true },
+                                enabled = availablePredecessors.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "选择前置节点"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSourceSelector,
+                                onDismissRequest = { showSourceSelector = false }
+                            ) {
+                                if (extractSourceIsReference) {
+                                    DropdownMenuItem(
+                                        text = { Text("使用静态值") },
+                                        onClick = {
+                                            extractSourceIsReference = false
+                                            extractSourceValue = ""
+                                            showSourceSelector = false
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                }
+                                availablePredecessors.forEach { predecessorNode ->
+                                    DropdownMenuItem(
+                                        text = { Text(predecessorNode.name) },
+                                        onClick = {
+                                            extractSourceIsReference = true
+                                            extractSourceValue = predecessorNode.id
+                                            showSourceSelector = false
+                                        }
+                                    )
+                                }
+                                if (availablePredecessors.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("无可用前置节点") },
+                                        onClick = { showSourceSelector = false },
+                                        enabled = false
+                                    )
+                                }
+                            }
+                        }
+                    }
                     "trigger" -> {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         Text(
@@ -1043,6 +1441,9 @@ fun NodeDialog(
                                 // 根据动作类型生成名称
                                 actionType.takeIf { it.isNotBlank() } ?: "执行动作"
                             }
+                            "condition" -> "条件判断"
+                            "logic" -> "逻辑判断"
+                            "extract" -> "提取"
                             else -> nodeTypes[nodeType] ?: "节点"
                         }
                     } else {
@@ -1053,23 +1454,23 @@ fun NodeDialog(
                         // 编辑模式：更新现有节点
                         when (node) {
                             is TriggerNode -> node.copy(
-                            name = nodeName,
-                            description = description,
-                            triggerType = triggerType,
-                            triggerConfig = if (triggerConfig.isNotBlank()) {
-                                try {
-                                    org.json.JSONObject(triggerConfig).let { json ->
-                                        json.keys().asSequence().associateWith { json.getString(it) }
+                                name = nodeName,
+                                description = description,
+                                triggerType = triggerType,
+                                triggerConfig = if (triggerConfig.isNotBlank()) {
+                                    try {
+                                        org.json.JSONObject(triggerConfig).let { json ->
+                                            json.keys().asSequence().associateWith { json.getString(it) }
+                                        }
+                                    } catch (e: Exception) {
+                                        emptyMap()
                                     }
-                                } catch (e: Exception) {
-                                    emptyMap()
-                                }
-                            } else emptyMap()
-                        )
+                                } else emptyMap()
+                            )
                             is ExecuteNode -> node.copy(
-                            name = nodeName,
-                            description = description,
-                            actionType = actionType,
+                                name = nodeName,
+                                description = description,
+                                actionType = actionType,
                                 actionConfig = actionConfigPairs
                                     .filter { it.key.isNotBlank() } // 过滤掉空的参数名
                                     .associate { param ->
@@ -1079,6 +1480,39 @@ fun NodeDialog(
                                             ParameterValue.StaticValue(param.value)
                                         }
                                     }
+                            )
+                            is ConditionNode -> node.copy(
+                                name = nodeName,
+                                description = description,
+                                left = if (conditionLeftIsReference) {
+                                    ParameterValue.NodeReference(conditionLeftValue)
+                                } else {
+                                    ParameterValue.StaticValue(conditionLeftValue)
+                                },
+                                operator = conditionOperator,
+                                right = if (conditionRightIsReference) {
+                                    ParameterValue.NodeReference(conditionRightValue)
+                                } else {
+                                    ParameterValue.StaticValue(conditionRightValue)
+                                }
+                            )
+                            is LogicNode -> node.copy(
+                                name = nodeName,
+                                description = description,
+                                operator = logicOperator
+                            )
+                            is ExtractNode -> node.copy(
+                                name = nodeName,
+                                description = description,
+                                source = if (extractSourceIsReference) {
+                                    ParameterValue.NodeReference(extractSourceValue)
+                                } else {
+                                    ParameterValue.StaticValue(extractSourceValue)
+                                },
+                                mode = extractMode,
+                                expression = extractExpression,
+                                group = extractGroupText.toIntOrNull() ?: 0,
+                                defaultValue = extractDefaultValue
                             )
                             else -> node
                         }
@@ -1092,13 +1526,13 @@ fun NodeDialog(
                                 triggerConfig = if (triggerConfig.isNotBlank()) {
                                     try {
                                         org.json.JSONObject(triggerConfig).let { json ->
-                                        json.keys().asSequence().associateWith { json.getString(it) }
+                                            json.keys().asSequence().associateWith { json.getString(it) }
+                                        }
+                                    } catch (e: Exception) {
+                                        emptyMap()
                                     }
-                                } catch (e: Exception) {
-                                    emptyMap()
-                                }
-                            } else emptyMap()
-                        )
+                                } else emptyMap()
+                            )
                             "execute" -> ExecuteNode(
                                 name = nodeName,
                                 description = description,
@@ -1112,9 +1546,42 @@ fun NodeDialog(
                                             ParameterValue.StaticValue(param.value)
                                         }
                                     }
-                        )
-                        else -> TriggerNode(name = nodeName, description = description)
-                    }
+                            )
+                            "condition" -> ConditionNode(
+                                name = nodeName,
+                                description = description,
+                                left = if (conditionLeftIsReference) {
+                                    ParameterValue.NodeReference(conditionLeftValue)
+                                } else {
+                                    ParameterValue.StaticValue(conditionLeftValue)
+                                },
+                                operator = conditionOperator,
+                                right = if (conditionRightIsReference) {
+                                    ParameterValue.NodeReference(conditionRightValue)
+                                } else {
+                                    ParameterValue.StaticValue(conditionRightValue)
+                                }
+                            )
+                            "logic" -> LogicNode(
+                                name = nodeName,
+                                description = description,
+                                operator = logicOperator
+                            )
+                            "extract" -> ExtractNode(
+                                name = nodeName,
+                                description = description,
+                                source = if (extractSourceIsReference) {
+                                    ParameterValue.NodeReference(extractSourceValue)
+                                } else {
+                                    ParameterValue.StaticValue(extractSourceValue)
+                                },
+                                mode = extractMode,
+                                expression = extractExpression,
+                                group = extractGroupText.toIntOrNull() ?: 0,
+                                defaultValue = extractDefaultValue
+                            )
+                            else -> TriggerNode(name = nodeName, description = description)
+                        }
                     }
                     onConfirm(resultNode)
                 }

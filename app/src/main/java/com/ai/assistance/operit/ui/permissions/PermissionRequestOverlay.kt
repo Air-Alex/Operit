@@ -183,7 +183,7 @@ private fun PermissionRequestContent(
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                             ) {
                                 Text(
-                                    "拒绝",
+                                    stringResource(R.string.permission_request_deny),
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontSize = 15.sp
                                     )
@@ -202,7 +202,7 @@ private fun PermissionRequestContent(
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Text(
-                                        "允许",
+                                        stringResource(R.string.permission_request_allow),
                                         style = MaterialTheme.typography.labelLarge.copy(
                                             fontSize = 15.sp
                                         )
@@ -210,7 +210,7 @@ private fun PermissionRequestContent(
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "以后都允许",
+                                    text = stringResource(R.string.permission_request_always_allow),
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         fontSize = 12.sp
                                     ),
@@ -367,7 +367,7 @@ class PermissionRequestOverlay(private val context: Context) {
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(
                         context,
-                        "需要悬浮窗权限，请在设置中允许此权限",
+                        context.getString(R.string.overlay_permission_grant_hint),
                         Toast.LENGTH_LONG
                     ).show()
                 }

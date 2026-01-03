@@ -26,6 +26,8 @@ import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.core.tools.system.AndroidShellExecutor
 import com.ai.assistance.operit.core.tools.system.Terminal
 import com.ai.assistance.operit.core.workflow.WorkflowSchedulerInitializer
+import com.ai.assistance.operit.data.backup.RoomDatabaseBackupPreferences
+import com.ai.assistance.operit.data.backup.RoomDatabaseBackupScheduler
 import com.ai.assistance.operit.data.db.AppDatabase
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
@@ -90,6 +92,8 @@ class OperitApplication : Application(), ImageLoaderFactory, WorkConfiguration.P
 
         // 每次应用冷启动时重置上一轮日志，避免日志无限增长
         AppLogger.resetLogFile()
+
+        ensureWorkManagerInitialized()
 
         AppLogger.d(TAG, "【启动计时】应用启动开始")
         AppLogger.d(TAG, "【启动计时】实例初始化完成 - ${System.currentTimeMillis() - startTime}ms")
@@ -255,6 +259,19 @@ class OperitApplication : Application(), ImageLoaderFactory, WorkConfiguration.P
             AppLogger.d(TAG, "【启动计时】WorkflowScheduler初始化完成（异步） - ${System.currentTimeMillis() - schedulerStartTime}ms")
         }
 
+        applicationScope.launch {
+            try {
+                val prefs = RoomDatabaseBackupPreferences.getInstance(applicationContext)
+                if (prefs.isDailyBackupEnabled()) {
+                    RoomDatabaseBackupScheduler.ensureScheduled(applicationContext)
+                } else {
+                    RoomDatabaseBackupScheduler.cancelScheduled(applicationContext)
+                }
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "Room DB backup schedule init failed", e)
+            }
+        }
+
         // 在应用启动时尝试绑定无障碍服务提供者（解决后台绑定限制问题）
         applicationScope.launch {
             AppLogger.d(TAG, "【启动计时】开始预绑定无障碍服务提供者...")
@@ -287,6 +304,18 @@ class OperitApplication : Application(), ImageLoaderFactory, WorkConfiguration.P
         get() = WorkConfiguration.Builder()
             .setMinimumLoggingLevel(if (BuildConfig.DEBUG) AppLogger.DEBUG else AppLogger.INFO)
             .build()
+
+    private fun ensureWorkManagerInitialized() {
+        try {
+            WorkManager.getInstance(applicationContext)
+        } catch (_: IllegalStateException) {
+            try {
+                WorkManager.initialize(applicationContext, workManagerConfiguration)
+            } catch (_: IllegalStateException) {
+
+            }
+        }
+    }
 
     private fun startGlobalAIForegroundService() {
         try {

@@ -516,6 +516,68 @@ class StandardWorkflowTools(private val context: Context) {
                         jsCode = jsCode
                     )
                 }
+                "condition" -> {
+                    val operatorRaw = nodeObj.optString("operator", "EQ")
+                    val operator = try {
+                        ConditionOperator.valueOf(operatorRaw.trim().uppercase())
+                    } catch (_: Exception) {
+                        ConditionOperator.EQ
+                    }
+
+                    val left = parseParameterValue(nodeObj.opt("left"))
+                    val right = parseParameterValue(nodeObj.opt("right"))
+
+                    ConditionNode(
+                        id = id,
+                        name = name.ifBlank { "条件判断" },
+                        description = description,
+                        position = position,
+                        left = left,
+                        operator = operator,
+                        right = right
+                    )
+                }
+                "logic" -> {
+                    val operatorRaw = nodeObj.optString("operator", "AND")
+                    val operator = try {
+                        LogicOperator.valueOf(operatorRaw.trim().uppercase())
+                    } catch (_: Exception) {
+                        LogicOperator.AND
+                    }
+
+                    LogicNode(
+                        id = id,
+                        name = name.ifBlank { "逻辑判断" },
+                        description = description,
+                        position = position,
+                        operator = operator
+                    )
+                }
+                "extract" -> {
+                    val modeRaw = nodeObj.optString("mode", "REGEX")
+                    val mode = try {
+                        ExtractMode.valueOf(modeRaw.trim().uppercase())
+                    } catch (_: Exception) {
+                        ExtractMode.REGEX
+                    }
+
+                    val expression = nodeObj.optString("expression", nodeObj.optString("pattern", nodeObj.optString("path", "")))
+                    val group = nodeObj.optInt("group", 0)
+                    val defaultValue = nodeObj.optString("defaultValue", "")
+                    val source = parseParameterValue(nodeObj.opt("source"))
+
+                    ExtractNode(
+                        id = id,
+                        name = name.ifBlank { "提取" },
+                        description = description,
+                        position = position,
+                        source = source,
+                        mode = mode,
+                        expression = expression,
+                        group = group,
+                        defaultValue = defaultValue
+                    )
+                }
                 else -> {
                     AppLogger.w(TAG, "Unknown node type: $type")
                     null
@@ -667,6 +729,28 @@ class StandardWorkflowTools(private val context: Context) {
         return map
     }
 
+    private fun parseParameterValue(raw: Any?): ParameterValue {
+        return when (raw) {
+            null, JSONObject.NULL -> ParameterValue.StaticValue("")
+            is JSONObject -> {
+                val nodeId = raw.optString("nodeId", raw.optString("ref", raw.optString("refNodeId", ""))).trim()
+                if (nodeId.isNotBlank()) {
+                    ParameterValue.NodeReference(nodeId)
+                } else {
+                    val value = raw.optString("value", raw.toString())
+                    ParameterValue.StaticValue(value)
+                }
+            }
+            is String -> {
+                val s = raw
+                ParameterValue.StaticValue(s)
+            }
+            is Number -> ParameterValue.StaticValue(raw.toString())
+            is Boolean -> ParameterValue.StaticValue(raw.toString())
+            else -> ParameterValue.StaticValue(raw.toString())
+        }
+    }
+
     /**
      * 将JSONObject转换为Map<String, ParameterValue>
      */
@@ -675,7 +759,7 @@ class StandardWorkflowTools(private val context: Context) {
         val keys = jsonObject.keys()
         while (keys.hasNext()) {
             val key = keys.next()
-            map[key] = ParameterValue.StaticValue(jsonObject.optString(key, ""))
+            map[key] = parseParameterValue(jsonObject.opt(key))
         }
         return map
     }
